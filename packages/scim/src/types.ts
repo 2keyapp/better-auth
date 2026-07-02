@@ -93,6 +93,17 @@ export type SCIMOptions = {
 		scimToken: string;
 		scimProvider: SCIMProvider;
 	}) => Promise<void>;
+	/** Runs after a SCIM user is provisioned (create). */
+	afterSCIMUserProvisioned?: (payload: {
+		user: User;
+		scimProvider: Omit<SCIMProvider, "id">;
+		externalId?: string;
+	}) => Promise<void>;
+	/** Runs after org-scoped SCIM deprovision (delete) or active=false deactivation. */
+	afterSCIMUserDeprovisioned?: (payload: {
+		user: User;
+		scimProvider: Omit<SCIMProvider, "id">;
+	}) => Promise<void>;
 	/**
 	 * Authorize who may generate a SCIM token. Runs after the built-in checks
 	 * (org-scoped tokens still require org membership + the required role), so it

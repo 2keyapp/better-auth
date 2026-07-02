@@ -598,7 +598,9 @@ scim({
 
 ### Hooks
 
-The following hooks allow to intercept the lifecycle of the `SCIM` token generation:
+The SCIM plugin provides hooks for token generation and user provisioning lifecycle events.
+
+#### Token generation hooks
 
 <Callout>
   **Note:** The built-in organization role check runs before these hooks. Use hooks to add stricter rules, not to bypass `requiredRole`.
@@ -624,5 +626,35 @@ scim({
 ```
 
 <Callout>
-  **Note**: All hooks support error handling. Throwing an error in a before hook will prevent the operation from proceeding.
+  **Note**: All hooks support error handling. Throwing an error in `beforeSCIMTokenGenerated` prevents the token from being persisted.
 </Callout>
+
+#### User provisioning hooks
+
+Use these hooks to react when an identity provider provisions or deprovisions users through SCIM.
+
+* **`afterSCIMUserProvisioned`**: Runs after `POST /scim/v2/Users` successfully creates a user. The payload includes the provisioned `user`, the `scimProvider` associated with the bearer token, and the `externalId` when the IdP supplied one (otherwise derived from `userName`).
+* **`afterSCIMUserDeprovisioned`**: Runs after:
+  * An organization-scoped `DELETE /scim/v2/Users/:userId` removes the user's membership and provider account for that organization
+  * A `PUT` or `PATCH` sets `active: false`, which deactivates the user and revokes their sessions (requires the [admin](/docs/plugins/admin) plugin)
+
+Non-organization `DELETE` requests do not invoke this hook. Those requests unlink or delete the global user instead of org-scoped deprovisioning.
+
+```ts
+scim({
+    afterSCIMUserProvisioned: async ({ user, scimProvider, externalId }) => {
+        await notifyTeamOfNewMember({
+            userId: user.id,
+            organizationId: scimProvider.organizationId,
+            externalId,
+        });
+    },
+    afterSCIMUserDeprovisioned: async ({ user, scimProvider }) => {
+        await revokeThirdPartyAccess({
+            userId: user.id,
+            organizationId: scimProvider.organizationId,
+            providerId: scimProvider.providerId,
+        });
+    },
+})
+```

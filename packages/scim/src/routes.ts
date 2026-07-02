@@ -337,6 +337,37 @@ function resolveSCIMActiveDeactivation(
 	return false;
 }
 
+async function invokeAfterSCIMUserProvisioned(
+	ctx: GenericEndpointContext,
+	opts: SCIMOptions,
+	payload: { user: User; externalId?: string },
+): Promise<void> {
+	if (!opts.afterSCIMUserProvisioned) {
+		return;
+	}
+
+	await opts.afterSCIMUserProvisioned({
+		user: payload.user,
+		scimProvider: ctx.context.scimProvider,
+		externalId: payload.externalId,
+	});
+}
+
+async function invokeAfterSCIMUserDeprovisioned(
+	ctx: GenericEndpointContext,
+	opts: SCIMOptions,
+	user: User,
+): Promise<void> {
+	if (!opts.afterSCIMUserDeprovisioned) {
+		return;
+	}
+
+	await opts.afterSCIMUserDeprovisioned({
+		user,
+		scimProvider: ctx.context.scimProvider,
+	});
+}
+
 export const generateSCIMToken = (opts: SCIMOptions) =>
 	createAuthEndpoint(
 		"/scim/generate-token",
@@ -880,13 +911,21 @@ export const createSCIMUser = (
 				account,
 			);
 
+			await invokeAfterSCIMUserProvisioned(ctx, opts, {
+				user,
+				externalId: account.accountId,
+			});
+
 			ctx.setStatus(201);
 			ctx.setHeader("location", userResource.meta.location);
 			return ctx.json(userResource);
 		},
 	);
 
-export const updateSCIMUser = (authMiddleware: AuthMiddleware) =>
+export const updateSCIMUser = (
+	authMiddleware: AuthMiddleware,
+	opts: SCIMOptions,
+) =>
 	createAuthEndpoint(
 		"/scim/v2/Users/:userId",
 		{
@@ -977,6 +1016,7 @@ export const updateSCIMUser = (authMiddleware: AuthMiddleware) =>
 
 			if (deactivating) {
 				await ctx.context.internalAdapter.deleteUserSessions(userId);
+				await invokeAfterSCIMUserDeprovisioned(ctx, opts, updatedUser!);
 			}
 
 			const userResource = createUserResource(
@@ -1172,7 +1212,10 @@ const patchSCIMUserBodySchema = z.object({
 	),
 });
 
-export const patchSCIMUser = (authMiddleware: AuthMiddleware) =>
+export const patchSCIMUser = (
+	authMiddleware: AuthMiddleware,
+	opts: SCIMOptions,
+) =>
 	createAuthEndpoint(
 		"/scim/v2/Users/:userId",
 		{
@@ -1253,6 +1296,7 @@ export const patchSCIMUser = (authMiddleware: AuthMiddleware) =>
 
 			if (deactivating) {
 				await ctx.context.internalAdapter.deleteUserSessions(userId);
+				await invokeAfterSCIMUserDeprovisioned(ctx, opts, user);
 			}
 
 			ctx.setStatus(204);
@@ -1260,7 +1304,10 @@ export const patchSCIMUser = (authMiddleware: AuthMiddleware) =>
 		},
 	);
 
-export const deleteSCIMUser = (authMiddleware: AuthMiddleware) =>
+export const deleteSCIMUser = (
+	authMiddleware: AuthMiddleware,
+	opts: SCIMOptions,
+) =>
 	createAuthEndpoint(
 		"/scim/v2/Users/:userId",
 		{
@@ -1372,6 +1419,8 @@ export const deleteSCIMUser = (authMiddleware: AuthMiddleware) =>
 						organization,
 					});
 				}
+
+				await invokeAfterSCIMUserDeprovisioned(ctx, opts, user);
 
 				ctx.setStatus(204);
 				return;
