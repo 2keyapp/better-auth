@@ -1,0 +1,21 @@
+{
+  "repository": {
+    "url": "git+https://github.com/2keyapp/better-auth.git"
+  },
+  "git": {
+    "userName": "github-actions[bot]",
+    "userEmail": "41898282+github-actions[bot]@users.noreply.github.com"
+  },
+  "packages": [
+    {
+      "filter": "./packages/better-auth",
+      "branch": "release",
+      "tagPrefix": "release-better-auth-v"
+    },
+    {
+      "filter": "./packages/scim",
+      "branch": "release-scim",
+      "tagPrefix": "release-scim-v"
+    }
+  ]
+}
