@@ -18,3 +18,9 @@ pre-commit:
     lockfile:
       glob: "{package.json,pnpm-lock.yaml,pnpm-workspace.yaml,packages/*/package.json}"
       run: pnpm install --frozen-lockfile --ignore-scripts
+
+pre-push:
+  piped: true
+  commands:
+    ci:
+      run: pnpm ci:pre-push
