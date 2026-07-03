@@ -12,7 +12,6 @@
     "build": "turbo build --filter=./packages/*",
     "release:branch": "node .github/scripts/publish-release-branch.mjs",
     "release:branch:dry-run": "node .github/scripts/publish-release-branch.mjs --dry-run",
-    "ci:pre-push": "bash .github/scripts/pre-push-ci.sh",
     "dev": "turbo dev --filter=./packages/* --filter=!./packages/cli",
     "clean": "turbo clean --filter=./packages/* && rm -rf node_modules",
     "format": "biome format . --write",

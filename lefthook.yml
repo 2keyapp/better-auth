@@ -22,5 +22,21 @@ pre-commit:
 pre-push:
   piped: true
   commands:
-    ci:
-      run: pnpm ci:pre-push
+    typecheck:
+      run: pnpm typecheck
+    lint:
+      run: pnpm lint
+    format:
+      run: pnpm format:check
+    spell:
+      run: pnpm lint:spell
+    build:
+      run: pnpm build
+    lint-types:
+      run: pnpm lint:types
+    typecheck-dist:
+      run: pnpm typecheck:dist
+    lint-packages:
+      run: pnpm lint:packages
+    lint-dependencies:
+      run: pnpm lint:dependencies
