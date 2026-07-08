@@ -6,6 +6,7 @@
  * Consumer example (package.json):
  *   "better-auth": "github:2keyapp/better-auth#release"
  *   "@better-auth/scim": "github:2keyapp/better-auth#release-scim"
+ *   "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
  */
 import { execFileSync } from "node:child_process";
 import {
