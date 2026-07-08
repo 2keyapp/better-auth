@@ -19,17 +19,22 @@ Flutter is a cross-platform UI toolkit for building apps for Android, iOS, web, 
   <Step>
     ## Install Server Dependencies
 
-    Install both the Better Auth package and the Flutter plugin into your server application.
+    Install Better Auth and the Flutter server plugin from GitHub (git release branches):
 
-    ```package-install
-    better-auth @better-auth/flutter
+    ```json title="package.json"
+    {
+      "dependencies": {
+        "better-auth": "github:2keyapp/better-auth#release",
+        "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
+      }
+    }
     ```
   </Step>
 
   <Step>
     ## Install Client Dependencies
 
-    Add the Dart client to your Flutter / Dart project via Git (until published on [pub.dev](https://pub.dev)):
+    Add the Dart client from the same GitHub repository:
 
     ```yaml title="pubspec.yaml"
     dependencies:
@@ -127,7 +132,7 @@ Use `authClient.getCookie()` when calling your own backend APIs that expect the 
 
 ### Social sign-in
 
-Provide a `sessionLauncher` that opens an auth session in the system / in-app browser and returns the redirect URL (for example via [`flutter_web_auth_2`](https://pub.dev/packages/flutter_web_auth_2)). Relative `callbackURL` values are converted to deep links using your scheme.
+Provide a `sessionLauncher` that opens an auth session in the system / in-app browser and returns the redirect URL (for example via `flutter_web_auth_2`). Relative `callbackURL` values are converted to deep links using your scheme.
 
 ```dart
 await authClient.signInSocial(

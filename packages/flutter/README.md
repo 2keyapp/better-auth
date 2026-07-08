@@ -2,14 +2,21 @@
 
 Server-side Better Auth plugin for Flutter and Dart clients.
 
-> The Dart client SDK lives at `packages/flutter/dart`
-> (intended for [pub.dev](https://pub.dev) as `better_auth`).
-> This npm package is the TypeScript server plugin only.
+The Dart client SDK lives at `packages/flutter/dart` and is consumed via
+GitHub (`path: packages/flutter/dart`). This npm package is the TypeScript
+server plugin (`@better-auth/flutter`).
 
 ## Installation
 
-```bash
-pnpm add better-auth @better-auth/flutter
+Install from the git release branches:
+
+```json
+{
+  "dependencies": {
+    "better-auth": "github:2keyapp/better-auth#release",
+    "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
+  }
+}
 ```
 
 ## Basic Usage
