@@ -37,7 +37,7 @@ jobs:
           filters: |
             e2e_paths:
               - 'packages/**'
-              - '!packages/flutter/dart/**'
+              - '!packages/flutter/**'
               - 'e2e/**'
               - 'test/**'
               - 'pnpm-lock.yaml'

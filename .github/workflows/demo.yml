@@ -37,7 +37,7 @@ jobs:
             demo_paths:
               - 'demo/**'
               - 'packages/**'
-              - '!packages/flutter/dart/**'
+              - '!packages/flutter/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
