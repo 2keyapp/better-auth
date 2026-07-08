@@ -42,7 +42,11 @@ jobs:
 
   build:
     needs: changes
-    if: needs.changes.outputs.packages == 'true'
+    # pkg-pr-new requires the GitHub App on the repo (upstream better-auth only).
+    # Skip on forks / private mirrors to avoid 404 failures and wasted builds.
+    if: >
+      needs.changes.outputs.packages == 'true' &&
+      github.repository == 'better-auth/better-auth'
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'better-auth/better-auth' || github.event_name != 'pull_request' && github.repository == 'better-auth/better-auth') && 'starsling-ubuntu-24.04' || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -76,3 +80,25 @@ jobs:
         run: pnpm build
 
       - run: pnpm dlx pkg-pr-new publish --pnpm './packages/*'
+
+  # Keep the workflow green on forks where pkg-pr-new is not installed.
+  preview:
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report status
+        env:
+          CHANGES: ${{ needs.changes.outputs.packages }}
+          BUILD: ${{ needs.build.result }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "packages changed: $CHANGES"
+          echo "build result: ${BUILD:-skipped}"
+          echo "repository: $REPO"
+          if [ "$REPO" != "better-auth/better-auth" ]; then
+            echo "pkg-pr-new publish skipped (GitHub App not required on this fork)."
+          fi
+          if [ "$BUILD" = "failure" ] || [ "$BUILD" = "cancelled" ]; then
+            exit 1
+          fi
