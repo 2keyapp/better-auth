@@ -1,0 +1,130 @@
+---
+title: Install from GitHub
+description: Install Better Auth packages from git release branches instead of npm or pub.dev.
+---
+
+This repository distributes packages through **GitHub git dependencies**, not npm or pub.dev. Each publishable package has a dedicated **release branch** that CI rebuilds and force-pushes whenever changes land on `main`.
+
+<Callout type="info">
+  Release branches contain a **standalone built artifact** (compiled output and `package.json` at the branch root). They are not the monorepo layout on `main`.
+</Callout>
+
+## How releases work
+
+1. Changes merge into `main`.
+2. The [Publish release branch](https://github.com/2keyapp/better-auth/blob/main/.github/workflows/release-branch.yml) workflow runs.
+3. CI builds each configured package and updates its release branch.
+4. Consumer apps reinstall dependencies to pick up the latest artifact. The git ref in `package.json` stays the same (for example `#release`).
+
+To inspect what was published, open `RELEASE.json` at the root of a release branch.
+
+## Package index
+
+Use this table to find the git ref for each package or plugin.
+
+| Package               | Install name           | Release branch         | Version tag prefix       | Docs                                  |
+| --------------------- | ---------------------- | ---------------------- | ------------------------ | ------------------------------------- |
+| Better Auth (core)    | `better-auth`          | `release`              | `release-better-auth-v*` | [Installation](/docs/installation)    |
+| SCIM plugin           | `@better-auth/scim`    | `release-scim`         | `release-scim-v*`        | [SCIM](/docs/plugins/scim)            |
+| Flutter server plugin | `@better-auth/flutter` | `release-flutter`      | `release-flutter-v*`     | [Flutter](/docs/integrations/flutter) |
+| Flutter / Dart client | `better_auth`          | `main` (monorepo path) | pin by commit on `main`  | [Flutter](/docs/integrations/flutter) |
+
+Built-in plugins shipped inside `better-auth` (for example `organization`, `twoFactor`, `oneTimeToken`) do **not** have separate release branches. Install them through the core `better-auth` package on `#release`:
+
+```ts
+import { organization } from "better-auth/plugins";
+```
+
+<Callout>
+  Only packages listed in [`.github/release-branch.config.json`](https://github.com/2keyapp/better-auth/blob/main/.github/release-branch.config.json) have dedicated release branches today.
+</Callout>
+
+## Node.js / TypeScript
+
+Add dependencies in `package.json` using the `github:owner/repo#branch` shorthand:
+
+```json title="package.json"
+{
+  "dependencies": {
+    "better-auth": "github:2keyapp/better-auth#release"
+  }
+}
+```
+
+Then install with your package manager:
+
+```bash
+pnpm install
+```
+
+Works the same with npm and Yarn — they all resolve `github:` dependencies.
+
+### Core
+
+```json
+"better-auth": "github:2keyapp/better-auth#release"
+```
+
+### SCIM
+
+Install **both** core and SCIM. Use matching release branches from the same `main` merge:
+
+```json
+{
+  "dependencies": {
+    "better-auth": "github:2keyapp/better-auth#release",
+    "@better-auth/scim": "github:2keyapp/better-auth#release-scim"
+  }
+}
+```
+
+### Flutter server plugin
+
+```json
+{
+  "dependencies": {
+    "better-auth": "github:2keyapp/better-auth#release",
+    "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
+  }
+}
+```
+
+## Flutter / Dart client
+
+The Dart SDK is **not** on a release branch. Pub needs the source tree at `packages/flutter/dart`, so the git ref must point at the monorepo (`main` or a pinned commit):
+
+```yaml title="pubspec.yaml"
+dependencies:
+  better_auth:
+    git:
+      url: https://github.com/2keyapp/better-auth.git
+      ref: main
+      path: packages/flutter/dart
+```
+
+For production, pin `ref` to a commit SHA from `main` instead of tracking `main` directly:
+
+```yaml
+ref: abc1234
+```
+
+Do **not** use `#release-flutter` for the Dart client — that branch only contains the npm server plugin layout.
+
+## Updating to a new release
+
+Release branch refs in `package.json` do not change between releases. After a new merge to `main`:
+
+1. Run `pnpm install` (or `npm install` / `yarn`) in Node projects.
+2. Run `flutter pub get` in Flutter projects (and bump `ref` if you pin by commit).
+3. Optionally verify versions via git tags (`release-better-auth-v*`, `release-scim-v*`, `release-flutter-v*`) or `RELEASE.json` on each branch.
+
+## Local development in this monorepo
+
+If you are working inside the Better Auth repository itself, use workspace protocol instead of git URLs:
+
+```json
+"better-auth": "workspace:*",
+"@better-auth/flutter": "workspace:*"
+```
+
+That is only for contributors in this repo. External apps should use the release branches above.

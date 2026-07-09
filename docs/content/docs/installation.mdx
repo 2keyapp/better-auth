@@ -7,14 +7,24 @@ description: Learn how to configure Better Auth in your project.
   <Step>
     ### Install the Package
 
-    Let's start by adding Better Auth to your project:
+    Better Auth is installed from GitHub, not npm. Add the core package using the **`release`** branch:
 
-    ```package-install
-    better-auth
+    ```json title="package.json"
+    {
+      "dependencies": {
+        "better-auth": "github:2keyapp/better-auth#release"
+      }
+    }
     ```
+
+    Then run `pnpm install`, `npm install`, or `yarn`.
 
     <Callout type="info">
       If you're using a separate client and server setup, make sure to install Better Auth in both parts of your project.
+    </Callout>
+
+    <Callout>
+      See [Install from GitHub](/docs/guides/github-installation) for the full package index (SCIM, Flutter, Dart client) and release-branch details.
     </Callout>
   </Step>
 

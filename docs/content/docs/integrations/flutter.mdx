@@ -19,7 +19,7 @@ Flutter is a cross-platform UI toolkit for building apps for Android, iOS, web, 
   <Step>
     ## Install Server Dependencies
 
-    Install Better Auth and the Flutter server plugin from GitHub (git release branches):
+    Install from GitHub release branches — core on **`release`**, server plugin on **`release-flutter`**:
 
     ```json title="package.json"
     {
@@ -29,21 +29,33 @@ Flutter is a cross-platform UI toolkit for building apps for Android, iOS, web, 
       }
     }
     ```
+
+    Then run `pnpm install`, `npm install`, or `yarn`.
+
+    <Callout>
+      Release branch: **`release-flutter`** · See [Install from GitHub](/docs/guides/github-installation) for the full package index.
+    </Callout>
   </Step>
 
   <Step>
     ## Install Client Dependencies
 
-    Add the Dart client from the same GitHub repository:
+    The Dart client is **not** on a release branch. Pub installs it from the monorepo on **`main`** (or a pinned commit) with `path`:
 
     ```yaml title="pubspec.yaml"
     dependencies:
       better_auth:
         git:
           url: https://github.com/2keyapp/better-auth.git
-          ref: main # or a release tag / commit
+          ref: main
           path: packages/flutter/dart
     ```
+
+    For production, pin `ref` to a commit SHA from `main` instead of tracking the branch head.
+
+    <Callout type="warn">
+      Do not use `#release-flutter` for the Dart client — that branch only contains the npm server plugin artifact.
+    </Callout>
 
     Prefer `flutter_secure_storage` (or similar) for production storage — inject it via `AuthStorage`.
   </Step>

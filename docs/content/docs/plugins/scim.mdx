@@ -16,9 +16,22 @@ This plugin exposes a [SCIM](https://simplecloud.info/#Specification) server tha
   <Step>
     ### Install the plugin
 
-    ```package-install
-    @better-auth/scim
+    Install from GitHub using the **`release-scim`** branch (and core Better Auth from **`release`**):
+
+    ```json title="package.json"
+    {
+      "dependencies": {
+        "better-auth": "github:2keyapp/better-auth#release",
+        "@better-auth/scim": "github:2keyapp/better-auth#release-scim"
+      }
+    }
     ```
+
+    Then run `pnpm install`, `npm install`, or `yarn`.
+
+    <Callout>
+      Release branch: **`release-scim`** · See [Install from GitHub](/docs/guides/github-installation) for all package refs.
+    </Callout>
   </Step>
 
   <Step>
