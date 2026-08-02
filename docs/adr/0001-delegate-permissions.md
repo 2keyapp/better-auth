@@ -86,9 +86,10 @@ Missing dimension on a grant means **unrestricted** for that dimension (parent A
 
 ## Consequences
 
-* P1 implements catalog + algebra + session grants + plugin endpoints (no PKI yet).
+* P1 implements catalog + algebra + session grants + plugin endpoints.
+* P2–P4 add kickstart (Entity Root + Root Admin), zone/interim issue with name occupancy, machine issue + IDR cosign + billing `machine_seats` binder.
 * Org RBAC (`organization` plugin) may remain for coarse UI; it must not replace CapabilitySets.
-* Agents/Presence will consume the same pure algebra package export in later phases.
+* Agents/Presence consume the same pure algebra / credential verify exports.
 
 ## References
 

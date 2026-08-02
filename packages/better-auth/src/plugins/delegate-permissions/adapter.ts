@@ -9,14 +9,19 @@ import type {
 	ProfileDef,
 	ScopeAlgebra,
 } from "./capability/types";
+import type { CapabilityCredential } from "./pki/types";
 import type { CatalogSeed } from "./seeds/idr";
 import type {
 	DpActionRow,
 	DpCatalogMetaRow,
+	DpCredentialRow,
+	DpEntityRow,
+	DpNameOccupancyRow,
 	DpPrincipalGrantRow,
 	DpProfileRow,
 	DpScopeDimensionRow,
 	DpSessionGrantRow,
+	DpUserCredentialBindRow,
 } from "./types";
 
 function isScopeAlgebra(value: string): value is ScopeAlgebra {
@@ -288,6 +293,117 @@ export function getDelegatePermissionsAdapter(
 					createdAt: now,
 				},
 			});
+		},
+
+		async getEntity(entityId: string): Promise<DpEntityRow | null> {
+			return adapter.findOne<DpEntityRow>({
+				model: "dpEntity",
+				where: [{ field: "entityId", value: entityId }],
+			});
+		},
+
+		async createEntity(input: {
+			entityId: string;
+			package: string;
+			rootSki: string;
+			ownerUserId: string;
+		}): Promise<DpEntityRow> {
+			const now = new Date();
+			return adapter.create<Omit<DpEntityRow, "id">, DpEntityRow>({
+				model: "dpEntity",
+				data: {
+					entityId: input.entityId,
+					package: input.package,
+					rootSki: input.rootSki,
+					ownerUserId: input.ownerUserId,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+		},
+
+		async getCredential(ski: string): Promise<DpCredentialRow | null> {
+			return adapter.findOne<DpCredentialRow>({
+				model: "dpCredential",
+				where: [{ field: "ski", value: ski }],
+			});
+		},
+
+		async createCredential(input: {
+			credential: CapabilityCredential;
+			seatId?: string | null;
+		}): Promise<DpCredentialRow> {
+			const c = input.credential;
+			return adapter.create<Omit<DpCredentialRow, "id">, DpCredentialRow>({
+				model: "dpCredential",
+				data: {
+					ski: c.ski,
+					entityId: c.entityId,
+					kind: c.kind,
+					publicJwk: c.publicJwk as Record<string, unknown>,
+					credential: c as unknown as Record<string, unknown>,
+					zone: c.zone ?? null,
+					host: c.host ?? null,
+					seatId: input.seatId ?? null,
+					status: "active",
+					createdAt: new Date(),
+				},
+			});
+		},
+
+		async bindUserCredential(input: {
+			userId: string;
+			credentialSki: string;
+			entityId: string;
+			isPrimary?: boolean;
+		}): Promise<DpUserCredentialBindRow> {
+			return adapter.create<
+				Omit<DpUserCredentialBindRow, "id">,
+				DpUserCredentialBindRow
+			>({
+				model: "dpUserCredentialBind",
+				data: {
+					userId: input.userId,
+					credentialSki: input.credentialSki,
+					entityId: input.entityId,
+					isPrimary: input.isPrimary ?? true,
+					createdAt: new Date(),
+				},
+			});
+		},
+
+		async getNameOccupancy(
+			entityId: string,
+			nameKey: string,
+		): Promise<DpNameOccupancyRow | null> {
+			const rows = await adapter.findMany<DpNameOccupancyRow>({
+				model: "dpNameOccupancy",
+				where: [
+					{ field: "entityId", value: entityId },
+					{ field: "nameKey", value: nameKey },
+				],
+			});
+			return rows[0] ?? null;
+		},
+
+		async claimName(input: {
+			entityId: string;
+			nameKey: string;
+			kind: "za" | "machine";
+			credentialSki: string;
+		}): Promise<DpNameOccupancyRow> {
+			return adapter.create<Omit<DpNameOccupancyRow, "id">, DpNameOccupancyRow>(
+				{
+					model: "dpNameOccupancy",
+					data: {
+						entityId: input.entityId,
+						nameKey: input.nameKey,
+						kind: input.kind,
+						credentialSki: input.credentialSki,
+						createdAt: new Date(),
+					},
+				},
+			);
 		},
 	};
 }

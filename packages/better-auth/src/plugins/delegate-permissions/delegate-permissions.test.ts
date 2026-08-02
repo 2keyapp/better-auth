@@ -11,6 +11,7 @@ describe("delegate-permissions plugin", async () => {
 				serviceId: "idr",
 				seed: "idr",
 				allowClientSeed: true,
+				allowServerKeygen: true,
 			}),
 		],
 		logger: {
@@ -160,5 +161,84 @@ describe("delegate-permissions plugin", async () => {
 			ok: false,
 			code: "SUBSET_VIOLATION",
 		});
+	});
+
+	it("kickstarts entity, issues zone delegate, then machine with seat", async () => {
+		const { headers } = await signInWithTestUser();
+		await client.$fetch("/delegate-permissions/seed-catalog", {
+			method: "POST",
+			body: {},
+			headers,
+		});
+
+		const kick = await client.$fetch("/delegate-permissions/kickstart-entity", {
+			method: "POST",
+			body: {
+				entityId: "amazon.com",
+				package: "enterprise",
+			},
+			headers,
+		});
+		expect(kick.error).toBeNull();
+		const kickData = kick.data as {
+			rootAdmin: {
+				credential: { ski: string };
+				privateJwk: Record<string, unknown>;
+			};
+		};
+
+		const zone = await client.$fetch("/delegate-permissions/issue-delegate", {
+			method: "POST",
+			body: {
+				entityId: "amazon.com",
+				kind: "zone_authority",
+				zone: "us-east",
+				issuerSki: kickData.rootAdmin.credential.ski,
+				issuerPrivateJwk: kickData.rootAdmin.privateJwk,
+			},
+			headers,
+		});
+		expect(zone.error).toBeNull();
+		const zoneData = zone.data as {
+			credential: { ski: string; zone?: string };
+			privateJwk: Record<string, unknown>;
+		};
+		expect(zoneData.credential.zone).toBe("us-east");
+
+		const machine = await client.$fetch("/delegate-permissions/issue-machine", {
+			method: "POST",
+			body: {
+				entityId: "amazon.com",
+				host: "db1.us-east--amazon.com",
+				issuerSki: zoneData.credential.ski,
+				issuerPrivateJwk: zoneData.privateJwk,
+			},
+			headers,
+		});
+		expect(machine.error).toBeNull();
+		const machineData = machine.data as {
+			credential: { kind: string; host?: string; idrCosign?: { kid: string } };
+			seatId: string;
+		};
+		expect(machineData.credential.kind).toBe("machine");
+		expect(machineData.credential.host).toBe("db1.us-east--amazon.com");
+		expect(machineData.credential.idrCosign?.kid).toBeTruthy();
+		expect(machineData.seatId).toBeTruthy();
+
+		const conflict = await client.$fetch(
+			"/delegate-permissions/issue-machine",
+			{
+				method: "POST",
+				body: {
+					entityId: "amazon.com",
+					host: "us-east--amazon.com",
+					issuerSki: kickData.rootAdmin.credential.ski,
+					issuerPrivateJwk: kickData.rootAdmin.privateJwk,
+				},
+				headers,
+			},
+		);
+		// us-east is already a ZA — must not also be a Machine
+		expect(conflict.error).toBeTruthy();
 	});
 });

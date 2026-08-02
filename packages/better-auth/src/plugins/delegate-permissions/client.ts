@@ -14,6 +14,9 @@ export const delegatePermissionsClient = () => {
 			"/delegate-permissions/issue-session-capabilities": "POST",
 			"/delegate-permissions/authorize": "POST",
 			"/delegate-permissions/assert-subset": "POST",
+			"/delegate-permissions/kickstart-entity": "POST",
+			"/delegate-permissions/issue-delegate": "POST",
+			"/delegate-permissions/issue-machine": "POST",
 		},
 	} satisfies BetterAuthClientPlugin;
 };

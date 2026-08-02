@@ -1,0 +1,519 @@
+import { createAuthEndpoint } from "@better-auth/core/api";
+import * as z from "zod";
+import { APIError, sessionMiddleware } from "../../api";
+import { getDelegatePermissionsAdapter } from "./adapter";
+import { expandProfile } from "./capability/expand";
+import { assertSubset } from "./capability/subset";
+import type { Capability, CapabilitySet, Catalog } from "./capability/types";
+import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
+import {
+	machineNameKey,
+	parseMachineHost,
+	zoneNameKey,
+	zoneUnderParent,
+} from "./names";
+import { capabilitySetSchema, parseCapabilitySet } from "./parse";
+import {
+	attachIdrCosign,
+	generateEd25519KeyPair,
+	issueCredential,
+} from "./pki";
+import type {
+	CapabilityCredential,
+	CosignProvider,
+	EntityPackage,
+	KeyPairMaterial,
+	SeatBinder,
+} from "./pki/types";
+import type { CatalogSeed } from "./seeds/idr";
+
+type DpAdapter = ReturnType<typeof getDelegatePermissionsAdapter>;
+
+function withEntityScope(
+	permissions: CapabilitySet,
+	entityId: string,
+): CapabilitySet {
+	return permissions.map(
+		(p): Capability => ({
+			...p,
+			scope: { ...p.scope, entity: entityId },
+		}),
+	);
+}
+
+function withNameScope(
+	permissions: CapabilitySet,
+	name: string,
+): CapabilitySet {
+	return permissions.map(
+		(p): Capability => ({
+			...p,
+			scope: { ...p.scope, name },
+		}),
+	);
+}
+
+async function ensureCatalog(
+	dp: DpAdapter,
+	configuredSeed: CatalogSeed | null,
+): Promise<Catalog> {
+	let catalog = await dp.loadCatalog();
+	if (!catalog && configuredSeed) {
+		catalog = await dp.seedCatalog(configuredSeed);
+	}
+	if (!catalog) {
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.CATALOG_NOT_SEEDED,
+		);
+	}
+	return catalog;
+}
+
+function defaultTestCosign(idrKey: KeyPairMaterial): CosignProvider {
+	return {
+		async cosignRoot(credential) {
+			return attachIdrCosign(credential, idrKey.privateJwk, idrKey.ski);
+		},
+		async cosignMachine(credential, _seatId) {
+			return attachIdrCosign(credential, idrKey.privateJwk, idrKey.ski);
+		},
+	};
+}
+
+export function createCredentialEndpoints(opts: {
+	serviceId: string;
+	configuredSeed: CatalogSeed | null;
+	allowServerKeygen: boolean;
+	cosign?: CosignProvider;
+	seatBinder?: SeatBinder;
+	/** Lazy test IDR key when cosign not provided but server keygen allowed */
+	getFallbackIdrKey?: () => Promise<KeyPairMaterial>;
+}) {
+	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
+		getDelegatePermissionsAdapter(adapter, opts.serviceId);
+
+	return {
+		dpKickstartEntity: createAuthEndpoint(
+			"/delegate-permissions/kickstart-entity",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					entityId: z.string().min(1),
+					package: z.enum(["personal", "enterprise"]),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Create Entity Root + Root Admin credentials and bind to the session user",
+					},
+				},
+			},
+			async (ctx) => {
+				if (!opts.allowServerKeygen) {
+					throw APIError.from("BAD_REQUEST", {
+						message:
+							"Server keygen disabled; provide client-generated keys (future CSR path)",
+						code: "SERVER_KEYGEN_DISABLED",
+					});
+				}
+				const dp = dpOf(ctx.context.adapter);
+				const catalog = await ensureCatalog(dp, opts.configuredSeed);
+				const entityId = ctx.body.entityId.toLowerCase();
+				const existing = await dp.getEntity(entityId);
+				if (existing) {
+					throw APIError.from(
+						"CONFLICT",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_EXISTS,
+					);
+				}
+
+				const entityPackage = ctx.body.package as EntityPackage;
+				const profileName =
+					entityPackage === "personal" ? "personal_root" : "root_admin";
+				const profiles = await dp.loadProfiles();
+				const basePermissions = withEntityScope(
+					expandProfile(profileName, profiles, catalog),
+					entityId,
+				);
+
+				const rootKeys = await generateEd25519KeyPair();
+				const adminKeys = await generateEd25519KeyPair();
+
+				let rootCredential = await issueCredential({
+					kind: "entity_root",
+					entityId,
+					subject: rootKeys,
+					permissions: basePermissions,
+					issuerSki: rootKeys.ski,
+					issuerPrivateJwk: rootKeys.privateJwk,
+					package: entityPackage,
+				});
+
+				const cosign =
+					opts.cosign ??
+					(opts.getFallbackIdrKey
+						? defaultTestCosign(await opts.getFallbackIdrKey())
+						: undefined);
+				if (cosign) {
+					rootCredential = await cosign.cosignRoot(rootCredential);
+				}
+
+				const adminCredential = await issueCredential({
+					kind: "root_admin",
+					entityId,
+					subject: adminKeys,
+					permissions: basePermissions,
+					issuerSki: rootKeys.ski,
+					issuerPrivateJwk: rootKeys.privateJwk,
+					package: entityPackage,
+					zone: "",
+				});
+
+				await dp.createEntity({
+					entityId,
+					package: entityPackage,
+					rootSki: rootKeys.ski,
+					ownerUserId: ctx.context.session.user.id,
+				});
+				await dp.createCredential({ credential: rootCredential });
+				await dp.createCredential({ credential: adminCredential });
+				await dp.bindUserCredential({
+					userId: ctx.context.session.user.id,
+					credentialSki: adminKeys.ski,
+					entityId,
+					isPrimary: true,
+				});
+				await dp.upsertPrincipalGrant({
+					userId: ctx.context.session.user.id,
+					entityId,
+					permissions: basePermissions,
+					profile: profileName,
+				});
+
+				return {
+					entityId,
+					package: entityPackage,
+					root: {
+						credential: rootCredential,
+						privateJwk: rootKeys.privateJwk,
+					},
+					rootAdmin: {
+						credential: adminCredential,
+						privateJwk: adminKeys.privateJwk,
+					},
+				};
+			},
+		),
+
+		dpIssueDelegate: createAuthEndpoint(
+			"/delegate-permissions/issue-delegate",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					entityId: z.string().min(1),
+					kind: z.enum(["interim_admin", "zone_authority"]),
+					zone: z.string().optional(),
+					permissions: capabilitySetSchema.optional(),
+					issuerPrivateJwk: z.record(z.string(), z.unknown()),
+					issuerSki: z.string().min(1),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Issue an interim admin or zone-authority credential (Option B)",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const catalog = await ensureCatalog(dp, opts.configuredSeed);
+				const entityId = ctx.body.entityId.toLowerCase();
+				const entity = await dp.getEntity(entityId);
+				if (!entity) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
+					);
+				}
+				if (
+					entity.package === "personal" &&
+					ctx.body.kind === "zone_authority"
+				) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.PACKAGE_FORBIDDEN,
+					);
+				}
+				if (
+					entity.package === "personal" &&
+					ctx.body.kind === "interim_admin"
+				) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.PACKAGE_FORBIDDEN,
+					);
+				}
+
+				const issuerRow = await dp.getCredential(ctx.body.issuerSki);
+				if (!issuerRow || issuerRow.entityId !== entityId) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ISSUER_UNAUTHORIZED,
+					);
+				}
+				const issuerCred =
+					issuerRow.credential as unknown as CapabilityCredential;
+				const parentPermissions = issuerCred.permissions;
+
+				const profiles = await dp.loadProfiles();
+				let childPermissions: CapabilitySet;
+				if (ctx.body.permissions) {
+					childPermissions = parseCapabilitySet(ctx.body.permissions);
+				} else if (ctx.body.kind === "interim_admin") {
+					childPermissions = withEntityScope(
+						expandProfile("interim_admin", profiles, catalog),
+						entityId,
+					);
+				} else {
+					const zone = zoneNameKey(ctx.body.zone ?? "");
+					if (zone === "") {
+						throw APIError.from("BAD_REQUEST", {
+							message: "zone is required for zone_authority",
+							code: "ZONE_REQUIRED",
+						});
+					}
+					const parentZone = issuerCred.zone ?? "";
+					if (!zoneUnderParent(zone, parentZone)) {
+						throw APIError.from(
+							"FORBIDDEN",
+							DELEGATE_PERMISSIONS_ERROR_CODES.SUBSET_VIOLATION,
+						);
+					}
+					childPermissions = withNameScope(
+						withEntityScope(
+							expandProfile("zone_delegate", profiles, catalog),
+							entityId,
+						),
+						zone,
+					);
+				}
+
+				const subset = assertSubset(
+					childPermissions,
+					parentPermissions,
+					catalog,
+				);
+				if (!subset.ok) {
+					throw APIError.from("FORBIDDEN", {
+						message: subset.message,
+						code: subset.code,
+					});
+				}
+
+				if (ctx.body.kind === "zone_authority") {
+					const zone = zoneNameKey(ctx.body.zone ?? "");
+					const occupied = await dp.getNameOccupancy(entityId, zone);
+					if (occupied) {
+						throw APIError.from(
+							"CONFLICT",
+							DELEGATE_PERMISSIONS_ERROR_CODES.NAME_OCCUPIED,
+						);
+					}
+				}
+
+				const subject = await generateEd25519KeyPair();
+				const zone =
+					ctx.body.kind === "zone_authority"
+						? zoneNameKey(ctx.body.zone ?? "")
+						: undefined;
+				const credential = await issueCredential({
+					kind: ctx.body.kind,
+					entityId,
+					subject,
+					permissions: childPermissions,
+					issuerSki: ctx.body.issuerSki,
+					issuerPrivateJwk: ctx.body.issuerPrivateJwk,
+					zone,
+					package: entity.package as EntityPackage,
+				});
+
+				await dp.createCredential({ credential });
+				if (ctx.body.kind === "zone_authority" && zone !== undefined) {
+					await dp.claimName({
+						entityId,
+						nameKey: zone,
+						kind: "za",
+						credentialSki: subject.ski,
+					});
+				}
+
+				return {
+					credential,
+					privateJwk: subject.privateJwk,
+				};
+			},
+		),
+
+		dpIssueMachine: createAuthEndpoint(
+			"/delegate-permissions/issue-machine",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					entityId: z.string().min(1),
+					host: z.string().min(1),
+					permissions: capabilitySetSchema.optional(),
+					issuerPrivateJwk: z.record(z.string(), z.unknown()),
+					issuerSki: z.string().min(1),
+					payingPartyId: z.string().optional(),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Issue a Machine credential, claim host name, IDR co-sign, bind permanent seat",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const catalog = await ensureCatalog(dp, opts.configuredSeed);
+				const entityId = ctx.body.entityId.toLowerCase();
+				const entity = await dp.getEntity(entityId);
+				if (!entity) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
+					);
+				}
+
+				const parsed = parseMachineHost(ctx.body.host, entityId);
+				if (!parsed) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+					);
+				}
+				const nameKey = machineNameKey(parsed.path);
+				const occupied = await dp.getNameOccupancy(entityId, nameKey);
+				if (occupied) {
+					throw APIError.from(
+						"CONFLICT",
+						occupied.kind === "za"
+							? DELEGATE_PERMISSIONS_ERROR_CODES.NAME_CONFLICT
+							: DELEGATE_PERMISSIONS_ERROR_CODES.NAME_OCCUPIED,
+					);
+				}
+
+				const issuerRow = await dp.getCredential(ctx.body.issuerSki);
+				if (!issuerRow || issuerRow.entityId !== entityId) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ISSUER_UNAUTHORIZED,
+					);
+				}
+				const issuerCred =
+					issuerRow.credential as unknown as CapabilityCredential;
+				const profiles = await dp.loadProfiles();
+				let childPermissions: CapabilitySet;
+				if (ctx.body.permissions) {
+					childPermissions = parseCapabilitySet(ctx.body.permissions);
+				} else {
+					childPermissions = withNameScope(
+						withEntityScope(
+							expandProfile("machine", profiles, catalog),
+							entityId,
+						),
+						nameKey,
+					);
+				}
+				const subset = assertSubset(
+					childPermissions,
+					issuerCred.permissions,
+					catalog,
+				);
+				if (!subset.ok) {
+					throw APIError.from("FORBIDDEN", {
+						message: subset.message,
+						code: subset.code,
+					});
+				}
+
+				// Issuer zone must cover machine name (dns_prefix)
+				const issuerZone = issuerCred.zone ?? "";
+				if (
+					issuerZone !== "" &&
+					!nameKey.endsWith(`.${issuerZone}`) &&
+					nameKey !== issuerZone
+				) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.SUBSET_VIOLATION,
+					);
+				}
+
+				const subject = await generateEd25519KeyPair();
+				const host = ctx.body.host.toLowerCase();
+				let credential = await issueCredential({
+					kind: "machine",
+					entityId,
+					subject,
+					permissions: childPermissions,
+					issuerSki: ctx.body.issuerSki,
+					issuerPrivateJwk: ctx.body.issuerPrivateJwk,
+					host,
+					package: entity.package as EntityPackage,
+				});
+
+				let seatId: string | undefined;
+				if (opts.seatBinder) {
+					try {
+						const seat = await opts.seatBinder.allocateAndBind({
+							entityId,
+							host,
+							machineSki: subject.ski,
+							payingPartyId: ctx.body.payingPartyId,
+						});
+						seatId = seat.seatId;
+					} catch {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.SEAT_BIND_FAILED,
+						);
+					}
+				} else {
+					seatId = `dev-seat-${subject.ski.slice(0, 12)}`;
+				}
+
+				const cosign =
+					opts.cosign ??
+					(opts.getFallbackIdrKey
+						? defaultTestCosign(await opts.getFallbackIdrKey())
+						: undefined);
+				if (!cosign) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.COSIGN_REQUIRED,
+					);
+				}
+				credential = await cosign.cosignMachine(credential, seatId);
+
+				await dp.claimName({
+					entityId,
+					nameKey,
+					kind: "machine",
+					credentialSki: subject.ski,
+				});
+				await dp.createCredential({ credential, seatId });
+
+				return {
+					credential,
+					privateJwk: subject.privateJwk,
+					seatId,
+				};
+			},
+		),
+	};
+}

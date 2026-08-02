@@ -9,8 +9,11 @@ import { authorize } from "./capability/authorize";
 import { expandProfile } from "./capability/expand";
 import { assertSubset } from "./capability/subset";
 import type { CapabilitySet, Resource } from "./capability/types";
+import { createCredentialEndpoints } from "./credentials";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
+import { generateEd25519KeyPair } from "./pki";
+import type { KeyPairMaterial } from "./pki/types";
 import { schema } from "./schema";
 import type { CatalogSeed } from "./seeds/idr";
 import { IDR_CATALOG_SEED } from "./seeds/idr";
@@ -28,6 +31,17 @@ export {
 	scopeValueSubset,
 } from "./capability";
 export { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
+export type {
+	CapabilityCredential,
+	CosignProvider,
+	SeatBinder,
+} from "./pki";
+export {
+	attachIdrCosign,
+	generateEd25519KeyPair,
+	issueCredential,
+	verifyCredentialSignature,
+} from "./pki";
 export { schema } from "./schema";
 export { IDR_CATALOG_SEED, IDR_SERVICE_ID } from "./seeds/idr";
 export type * from "./types";
@@ -62,7 +76,23 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const serviceId = options?.serviceId ?? "default";
 	const sessionGrantExpiresIn = options?.sessionGrantExpiresIn ?? 3600;
 	const allowClientSeed = options?.allowClientSeed ?? false;
+	const allowServerKeygen = options?.allowServerKeygen ?? false;
 	const configuredSeed = resolveSeed(options?.seed, serviceId);
+	let fallbackIdrKey: KeyPairMaterial | undefined;
+
+	const credentialEndpoints = createCredentialEndpoints({
+		serviceId,
+		configuredSeed,
+		allowServerKeygen,
+		cosign: options?.cosign,
+		seatBinder: options?.seatBinder,
+		getFallbackIdrKey: async () => {
+			if (!fallbackIdrKey) {
+				fallbackIdrKey = await generateEd25519KeyPair();
+			}
+			return fallbackIdrKey;
+		},
+	});
 
 	return {
 		id: "delegate-permissions",
@@ -70,6 +100,7 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		options: options as DelegatePermissionsOptions | undefined,
 		schema: mergeSchema(schema, {}),
 		endpoints: {
+			...credentialEndpoints,
 			dpSeedCatalog: createAuthEndpoint(
 				"/delegate-permissions/seed-catalog",
 				{

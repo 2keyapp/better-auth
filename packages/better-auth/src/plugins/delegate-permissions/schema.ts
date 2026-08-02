@@ -166,4 +166,142 @@ export const schema = {
 			},
 		},
 	},
+	dpEntity: {
+		fields: {
+			entityId: {
+				type: "string",
+				required: true,
+				unique: true,
+			},
+			package: {
+				type: "string",
+				required: true,
+			},
+			rootSki: {
+				type: "string",
+				required: true,
+			},
+			ownerUserId: {
+				type: "string",
+				required: true,
+				index: true,
+				references: {
+					model: "user",
+					field: "id",
+				},
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+			updatedAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
+	dpCredential: {
+		fields: {
+			ski: {
+				type: "string",
+				required: true,
+				unique: true,
+			},
+			entityId: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			kind: {
+				type: "string",
+				required: true,
+			},
+			publicJwk: {
+				type: "json",
+				required: true,
+			},
+			credential: {
+				type: "json",
+				required: true,
+			},
+			zone: {
+				type: "string",
+				required: false,
+			},
+			host: {
+				type: "string",
+				required: false,
+			},
+			seatId: {
+				type: "string",
+				required: false,
+			},
+			status: {
+				type: "string",
+				required: true,
+				defaultValue: "active",
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
+	dpUserCredentialBind: {
+		fields: {
+			userId: {
+				type: "string",
+				required: true,
+				index: true,
+				references: {
+					model: "user",
+					field: "id",
+				},
+			},
+			credentialSki: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			entityId: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			isPrimary: {
+				type: "boolean",
+				required: true,
+				defaultValue: true,
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
+	dpNameOccupancy: {
+		fields: {
+			entityId: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			nameKey: {
+				type: "string",
+				required: true,
+			},
+			kind: {
+				type: "string",
+				required: true,
+			},
+			credentialSki: {
+				type: "string",
+				required: true,
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
 } satisfies BetterAuthPluginDBSchema;
