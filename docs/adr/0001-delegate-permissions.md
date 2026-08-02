@@ -89,9 +89,10 @@ Missing dimension on a grant means **unrestricted** for that dimension (parent A
 * P1 implements catalog + algebra + session grants + plugin endpoints.
 * P2–P4 add kickstart (Entity Root + Root Admin), zone/interim issue with name occupancy, machine issue + platform cosign + billing `machine_seats` binder.
 * Org RBAC (`organization` plugin) may remain for coarse UI; it must not replace CapabilitySets.
-* Tenant PEPs and client SDKs (`dp-sdk`) consume the same pure algebra / credential verify exports. Product catalogs (actions/profiles) are tenant-supplied, not hard-coded in the plugin.
+* Tenant PEPs and client SDKs (`dp-sdk`) consume the same pure algebra / credential verify exports. Product catalogs (actions/profiles) live in `dp-sdk/catalogs/<slug>` (Scomm, IDR, OS20, StemSketch, MnMs, …) — not hard-coded in the plugin. See `docs/TENANTS.md`.
 
 ## References
 
 * Implementation: `packages/better-auth/src/plugins/delegate-permissions/`
+* Tenant catalogs: `2keyapp/dp-sdk/catalogs/`, `docs/TENANTS.md`
 * Billing: merchant-per-DB model; machine seats deferred to P4 (`billing/DECISIONS.md`)
