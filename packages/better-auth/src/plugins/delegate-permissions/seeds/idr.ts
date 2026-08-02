@@ -7,12 +7,12 @@ import type {
 
 export const IDR_SERVICE_ID = "idr";
 
-export const IDR_ACTIONS: readonly ActionDef[] = [
+const IDR_ACTIONS: readonly ActionDef[] = [
 	{ action: "admin.invite", description: "Create interim admin identity" },
 	{ action: "cert.issue", description: "Sign downstream credentials" },
 	{ action: "zone.ns", description: "Occupy a zone name as ZA" },
 	{ action: "zone.delegate", description: "Create child zone under scope" },
-	{ action: "machine.bind", description: "Occupy leaf FQHN as Machine" },
+	{ action: "machine.bind", description: "Occupy leaf host name as Machine" },
 	{ action: "machine.connect", description: "Act as Source/Target peer" },
 	{ action: "seat.bind", description: "Bind permanent machine seat" },
 	{ action: "presence.register", description: "Register Target with Presence" },
@@ -21,7 +21,7 @@ export const IDR_ACTIONS: readonly ActionDef[] = [
 	{ action: "entity.read", description: "Read entity control-plane data" },
 ] as const;
 
-export const IDR_SCOPE_DIMENSIONS: readonly ScopeDimensionDef[] = [
+const IDR_SCOPE_DIMENSIONS: readonly ScopeDimensionDef[] = [
 	{ dimension: "entity", algebra: "exact" },
 	{ dimension: "name", algebra: "dns_prefix" },
 	{ dimension: "seat", algebra: "exact" },
@@ -224,7 +224,7 @@ const machinePermissions: CapabilitySet = [
 	},
 ];
 
-export const IDR_PROFILES: readonly ProfileDef[] = [
+const IDR_PROFILES: readonly ProfileDef[] = [
 	{ profile: "root_admin", permissions: rootAdminPermissions },
 	{ profile: "personal_root", permissions: personalRootPermissions },
 	{ profile: "interim_admin", permissions: interimAdminPermissions },

@@ -291,7 +291,3 @@ export function getDelegatePermissionsAdapter(
 		},
 	};
 }
-
-export type DelegatePermissionsAdapter = ReturnType<
-	typeof getDelegatePermissionsAdapter
->;
