@@ -4,14 +4,14 @@ Better Auth `delegate-permissions` is **product-neutral**. Tenant action/profile
 
 Canonical registry: [`2keyapp/dp-sdk` TENANTS.md](https://github.com/2keyapp/dp-sdk/blob/main/TENANTS.md).
 
-| Slug | Display | Catalog package | Notes |
-|------|---------|-----------------|-------|
-| `demo` | Demo | `@2key/catalog-demo` | Built-in plugin alias `"demo"` mirrors this for tests |
-| `scomm` | Scomm | `@2key/catalog-scomm` | Auth + Billing model **TBD** |
-| `idr` | IDR | `@2key/catalog-idr` | Auth + Billing model **TBD** |
-| `os20` | OS20 | `@2key/catalog-os20` | Auth + Billing model **TBD** |
-| `stemsketch` | StemSketch | `@2key/catalog-stemsketch` | Auth + Billing model **TBD** |
-| `mnms` | MnMs | `@2key/catalog-mnms` | Auth + Billing model **TBD** |
+| Slug         | Display    | Catalog package             | Notes                                          |
+| ------------ | ---------- | --------------------------- | ---------------------------------------------- |
+| `demo`       | Demo       | `@2key/catalog-demo`        | Built-in plugin alias `"demo"` for tests       |
+| `scomm`      | Scomm      | `@2key/catalog-scomm`       | Auth + Billing model **TBD**                   |
+| `idr`        | IDR        | `@2key/catalog-idr`         | Auth + Billing model **TBD**                   |
+| `os20`       | OS20       | `@2key/catalog-os20`        | Auth + Billing model **TBD**                   |
+| `stemsketch` | StemSketch | `@2key/catalog-stemsketch`  | Auth + Billing model **TBD**                   |
+| `mnms`       | MnMs       | `@2key/catalog-mnms`        | Auth + Billing model **TBD**                   |
 
 ```ts
 import { CATALOG_SEED, SERVICE_ID } from "@2key/catalog-idr";
