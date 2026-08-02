@@ -73,6 +73,12 @@ const resourceSchema = z.record(
 	z.union([z.string(), z.array(z.string())]),
 );
 
+/**
+ * Delegate Permissions plugin.
+ *
+ * For the IDR tenant (`serviceId: "idr"`), see `./IDR.md` and wire
+ * `seatBinder` to Billing machine seats. Catalog: `@2key/catalog-idr`.
+ */
 export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const serviceId = options?.serviceId ?? "default";
 	const sessionGrantExpiresIn = options?.sessionGrantExpiresIn ?? 3600;
