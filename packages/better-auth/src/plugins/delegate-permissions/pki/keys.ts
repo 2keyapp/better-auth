@@ -22,7 +22,3 @@ export async function generateEd25519KeyPair(): Promise<KeyPairMaterial> {
 		privateJwk: { ...privateJwk, kid: ski, alg: "EdDSA" },
 	};
 }
-
-export async function skiFromPublicJwk(publicJwk: PublicJwk): Promise<string> {
-	return calculateJwkThumbprint(publicJwk, "sha256");
-}

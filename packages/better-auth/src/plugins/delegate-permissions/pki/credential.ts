@@ -29,7 +29,7 @@ function canonicalPayload(credential: UnsignedCredential): Uint8Array {
 	return new TextEncoder().encode(JSON.stringify(ordered));
 }
 
-export async function signCredential(
+async function signCredential(
 	unsigned: UnsignedCredential,
 	issuerPrivateJwk: Record<string, unknown>,
 ): Promise<CapabilityCredential> {

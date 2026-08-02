@@ -1,10 +1,9 @@
 export {
 	attachIdrCosign,
 	issueCredential,
-	signCredential,
 	verifyCredentialSignature,
 } from "./credential";
-export { generateEd25519KeyPair, skiFromPublicJwk } from "./keys";
+export { generateEd25519KeyPair } from "./keys";
 export type {
 	CapabilityCredential,
 	CosignProvider,
