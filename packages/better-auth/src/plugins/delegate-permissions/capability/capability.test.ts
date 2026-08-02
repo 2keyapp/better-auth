@@ -6,7 +6,7 @@ import { assertSubset } from "./subset";
 import type { CapabilitySet, Catalog } from "./types";
 
 const catalog: Catalog = {
-	serviceId: "idr",
+	serviceId: "demo",
 	generation: 1,
 	actions: [
 		{ action: "cert.issue" },

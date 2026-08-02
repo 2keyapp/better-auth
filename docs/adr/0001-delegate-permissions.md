@@ -57,7 +57,7 @@ Missing dimension on a grant means **unrestricted** for that dimension (parent A
 * **Option B:** zone/permissions live on the certificate; API stores occupancy, revocation, seats.
 * Name is **ZA or Machine, never both**; no `.admin--` host-name markers.
 * Host optional for ZA/interim admin; Machine fully-qualified host name required.
-* IDR co-signs Entity Root + Machine leaf; Machine binds permanent billing seat (later).
+* Platform authority co-signs Entity Root + Machine leaf; Machine binds permanent billing seat (later).
 
 ### Plugin identity
 
@@ -87,9 +87,9 @@ Missing dimension on a grant means **unrestricted** for that dimension (parent A
 ## Consequences
 
 * P1 implements catalog + algebra + session grants + plugin endpoints.
-* P2–P4 add kickstart (Entity Root + Root Admin), zone/interim issue with name occupancy, machine issue + IDR cosign + billing `machine_seats` binder.
+* P2–P4 add kickstart (Entity Root + Root Admin), zone/interim issue with name occupancy, machine issue + platform cosign + billing `machine_seats` binder.
 * Org RBAC (`organization` plugin) may remain for coarse UI; it must not replace CapabilitySets.
-* Agents/Presence consume the same pure algebra / credential verify exports.
+* Tenant PEPs and client SDKs (`dp-sdk`) consume the same pure algebra / credential verify exports. Product catalogs (actions/profiles) are tenant-supplied, not hard-coded in the plugin.
 
 ## References
 

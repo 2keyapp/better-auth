@@ -17,7 +17,7 @@ export const DELEGATE_PERMISSIONS_ERROR_CODES = defineErrorCodes({
 	NAME_OCCUPIED: "Name is already occupied by another role",
 	NAME_CONFLICT: "Name cannot be both zone authority and machine",
 	PACKAGE_FORBIDDEN: "Action is forbidden for this entity package",
-	COSIGN_REQUIRED: "IDR co-sign is required for this credential",
+	COSIGN_REQUIRED: "Platform co-sign is required for this credential",
 	SEAT_BIND_FAILED: "Failed to bind a permanent machine seat",
 	ISSUER_UNAUTHORIZED: "Issuer is not allowed to create this credential",
 	INVALID_HOST: "Machine host name is invalid for the entity",

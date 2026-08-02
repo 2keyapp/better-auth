@@ -15,8 +15,8 @@ import { capabilitySetSchema, parseCapabilitySet } from "./parse";
 import { generateEd25519KeyPair } from "./pki";
 import type { KeyPairMaterial } from "./pki/types";
 import { schema } from "./schema";
-import type { CatalogSeed } from "./seeds/idr";
-import { IDR_CATALOG_SEED } from "./seeds/idr";
+import type { CatalogSeed } from "./seeds";
+import { DEMO_CATALOG_SEED } from "./seeds";
 import type { DelegatePermissionsOptions } from "./types";
 
 export type * from "./capability";
@@ -37,13 +37,14 @@ export type {
 	SeatBinder,
 } from "./pki";
 export {
-	attachIdrCosign,
+	attachPlatformCosign,
 	generateEd25519KeyPair,
 	issueCredential,
 	verifyCredentialSignature,
 } from "./pki";
 export { schema } from "./schema";
-export { IDR_CATALOG_SEED, IDR_SERVICE_ID } from "./seeds/idr";
+export type { CatalogSeed } from "./seeds";
+export { DEMO_CATALOG_SEED, DEMO_SERVICE_ID } from "./seeds";
 export type * from "./types";
 
 declare module "@better-auth/core" {
@@ -61,8 +62,8 @@ function resolveSeed(
 	if (!seed) {
 		return null;
 	}
-	if (seed === "idr") {
-		return { ...IDR_CATALOG_SEED, serviceId };
+	if (seed === "demo") {
+		return { ...DEMO_CATALOG_SEED, serviceId };
 	}
 	return { ...seed, serviceId: seed.serviceId || serviceId };
 }
@@ -78,7 +79,7 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const allowClientSeed = options?.allowClientSeed ?? false;
 	const allowServerKeygen = options?.allowServerKeygen ?? false;
 	const configuredSeed = resolveSeed(options?.seed, serviceId);
-	let fallbackIdrKey: KeyPairMaterial | undefined;
+	let fallbackCosignKey: KeyPairMaterial | undefined;
 
 	const credentialEndpoints = createCredentialEndpoints({
 		serviceId,
@@ -86,11 +87,11 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		allowServerKeygen,
 		cosign: options?.cosign,
 		seatBinder: options?.seatBinder,
-		getFallbackIdrKey: async () => {
-			if (!fallbackIdrKey) {
-				fallbackIdrKey = await generateEd25519KeyPair();
+		getFallbackCosignKey: async () => {
+			if (!fallbackCosignKey) {
+				fallbackCosignKey = await generateEd25519KeyPair();
 			}
-			return fallbackIdrKey;
+			return fallbackCosignKey;
 		},
 	});
 

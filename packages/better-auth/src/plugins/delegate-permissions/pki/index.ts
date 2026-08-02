@@ -1,5 +1,5 @@
 export {
-	attachIdrCosign,
+	attachPlatformCosign,
 	issueCredential,
 	verifyCredentialSignature,
 } from "./credential";

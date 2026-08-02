@@ -8,8 +8,8 @@ describe("delegate-permissions plugin", async () => {
 	const { auth, signInWithTestUser } = await getTestInstance({
 		plugins: [
 			delegatePermissions({
-				serviceId: "idr",
-				seed: "idr",
+				serviceId: "demo",
+				seed: "demo",
 				allowClientSeed: true,
 				allowServerKeygen: true,
 			}),
@@ -29,7 +29,7 @@ describe("delegate-permissions plugin", async () => {
 		},
 	});
 
-	it("seeds IDR catalog", async () => {
+	it("seeds demo catalog", async () => {
 		const { headers } = await signInWithTestUser();
 		const seeded = await client.$fetch("/delegate-permissions/seed-catalog", {
 			method: "POST",
@@ -39,7 +39,7 @@ describe("delegate-permissions plugin", async () => {
 		expect(seeded.data).toMatchObject({
 			seeded: true,
 			catalog: {
-				serviceId: "idr",
+				serviceId: "demo",
 			},
 		});
 
@@ -49,7 +49,7 @@ describe("delegate-permissions plugin", async () => {
 		});
 		expect(catalog.data).toMatchObject({
 			catalog: {
-				serviceId: "idr",
+				serviceId: "demo",
 			},
 		});
 		expect(
@@ -217,12 +217,16 @@ describe("delegate-permissions plugin", async () => {
 		});
 		expect(machine.error).toBeNull();
 		const machineData = machine.data as {
-			credential: { kind: string; host?: string; idrCosign?: { kid: string } };
+			credential: {
+				kind: string;
+				host?: string;
+				platformCosign?: { kid: string };
+			};
 			seatId: string;
 		};
 		expect(machineData.credential.kind).toBe("machine");
 		expect(machineData.credential.host).toBe("db1.us-east--amazon.com");
-		expect(machineData.credential.idrCosign?.kid).toBeTruthy();
+		expect(machineData.credential.platformCosign?.kid).toBeTruthy();
 		expect(machineData.seatId).toBeTruthy();
 
 		const conflict = await client.$fetch(

@@ -11,7 +11,7 @@ import type {
 type UnsignedCredential = Omit<CapabilityCredential, "signature">;
 
 function canonicalPayload(credential: UnsignedCredential): Uint8Array {
-	// idrCosign is attested separately and must not break the issuer signature.
+	// platformCosign is attested separately and must not break the issuer signature.
 	const ordered = {
 		version: credential.version,
 		kind: credential.kind,
@@ -94,14 +94,14 @@ export async function issueCredential(input: {
 	return signCredential(unsigned, input.issuerPrivateJwk);
 }
 
-/** Test/dev cosign: re-sign idrCosign block with provided IDR key. */
-export async function attachIdrCosign(
+/** Test/dev cosign: attach platformCosign with the platform authority key. */
+export async function attachPlatformCosign(
 	credential: CapabilityCredential,
-	idrPrivateJwk: Record<string, unknown>,
-	idrKid: string,
+	platformPrivateJwk: Record<string, unknown>,
+	platformKid: string,
 ): Promise<CapabilityCredential> {
 	const signedAt = new Date().toISOString();
-	const key = await importJWK(idrPrivateJwk, "EdDSA");
+	const key = await importJWK(platformPrivateJwk, "EdDSA");
 	const body = new TextEncoder().encode(
 		JSON.stringify({
 			ski: credential.ski,
@@ -112,10 +112,10 @@ export async function attachIdrCosign(
 		}),
 	);
 	const signature = await new CompactSign(body)
-		.setProtectedHeader({ alg: "EdDSA", kid: idrKid })
+		.setProtectedHeader({ alg: "EdDSA", kid: platformKid })
 		.sign(key);
 	return {
 		...credential,
-		idrCosign: { kid: idrKid, signedAt, signature },
+		platformCosign: { kid: platformKid, signedAt, signature },
 	};
 }

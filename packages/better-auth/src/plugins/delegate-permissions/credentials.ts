@@ -14,7 +14,7 @@ import {
 } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
 import {
-	attachIdrCosign,
+	attachPlatformCosign,
 	generateEd25519KeyPair,
 	issueCredential,
 } from "./pki";
@@ -25,7 +25,7 @@ import type {
 	KeyPairMaterial,
 	SeatBinder,
 } from "./pki/types";
-import type { CatalogSeed } from "./seeds/idr";
+import type { CatalogSeed } from "./seeds";
 
 type DpAdapter = ReturnType<typeof getDelegatePermissionsAdapter>;
 
@@ -70,13 +70,21 @@ async function ensureCatalog(
 	return catalog;
 }
 
-function defaultTestCosign(idrKey: KeyPairMaterial): CosignProvider {
+function defaultTestCosign(platformKey: KeyPairMaterial): CosignProvider {
 	return {
 		async cosignRoot(credential) {
-			return attachIdrCosign(credential, idrKey.privateJwk, idrKey.ski);
+			return attachPlatformCosign(
+				credential,
+				platformKey.privateJwk,
+				platformKey.ski,
+			);
 		},
 		async cosignMachine(credential, _seatId) {
-			return attachIdrCosign(credential, idrKey.privateJwk, idrKey.ski);
+			return attachPlatformCosign(
+				credential,
+				platformKey.privateJwk,
+				platformKey.ski,
+			);
 		},
 	};
 }
@@ -87,8 +95,8 @@ export function createCredentialEndpoints(opts: {
 	allowServerKeygen: boolean;
 	cosign?: CosignProvider;
 	seatBinder?: SeatBinder;
-	/** Lazy test IDR key when cosign not provided but server keygen allowed */
-	getFallbackIdrKey?: () => Promise<KeyPairMaterial>;
+	/** Lazy test platform key when cosign not provided but server keygen allowed */
+	getFallbackCosignKey?: () => Promise<KeyPairMaterial>;
 }) {
 	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
 		getDelegatePermissionsAdapter(adapter, opts.serviceId);
@@ -153,8 +161,8 @@ export function createCredentialEndpoints(opts: {
 
 				const cosign =
 					opts.cosign ??
-					(opts.getFallbackIdrKey
-						? defaultTestCosign(await opts.getFallbackIdrKey())
+					(opts.getFallbackCosignKey
+						? defaultTestCosign(await opts.getFallbackCosignKey())
 						: undefined);
 				if (cosign) {
 					rootCredential = await cosign.cosignRoot(rootCredential);
@@ -373,7 +381,7 @@ export function createCredentialEndpoints(opts: {
 				metadata: {
 					openapi: {
 						description:
-							"Issue a Machine credential, claim host name, IDR co-sign, bind permanent seat",
+							"Issue a Machine credential, claim host name, platform co-sign, bind permanent seat",
 					},
 				},
 			},
@@ -489,8 +497,8 @@ export function createCredentialEndpoints(opts: {
 
 				const cosign =
 					opts.cosign ??
-					(opts.getFallbackIdrKey
-						? defaultTestCosign(await opts.getFallbackIdrKey())
+					(opts.getFallbackCosignKey
+						? defaultTestCosign(await opts.getFallbackCosignKey())
 						: undefined);
 				if (!cosign) {
 					throw APIError.from(

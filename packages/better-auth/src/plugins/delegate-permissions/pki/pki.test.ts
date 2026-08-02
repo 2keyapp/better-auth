@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-	attachIdrCosign,
+	attachPlatformCosign,
 	generateEd25519KeyPair,
 	issueCredential,
 	verifyCredentialSignature,
@@ -28,9 +28,9 @@ describe("pki credentials", () => {
 		);
 	});
 
-	it("keeps issuer signature valid after IDR cosign attach", async () => {
+	it("keeps issuer signature valid after platform cosign attach", async () => {
 		const issuer = await generateEd25519KeyPair();
-		const idr = await generateEd25519KeyPair();
+		const platform = await generateEd25519KeyPair();
 		const subject = await generateEd25519KeyPair();
 		const credential = await issueCredential({
 			kind: "machine",
@@ -47,8 +47,12 @@ describe("pki credentials", () => {
 			issuerPrivateJwk: issuer.privateJwk,
 			host: "db1--amazon.com",
 		});
-		const cosigned = await attachIdrCosign(credential, idr.privateJwk, idr.ski);
-		expect(cosigned.idrCosign?.kid).toBe(idr.ski);
+		const cosigned = await attachPlatformCosign(
+			credential,
+			platform.privateJwk,
+			platform.ski,
+		);
+		expect(cosigned.platformCosign?.kid).toBe(platform.ski);
 		expect(await verifyCredentialSignature(cosigned, issuer.publicJwk)).toBe(
 			true,
 		);

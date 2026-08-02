@@ -33,7 +33,8 @@ export type CapabilityCredential = {
 	readonly notBefore: string;
 	readonly notAfter: string;
 	readonly package?: EntityPackage;
-	readonly idrCosign?: {
+	/** Platform authority co-sign (Entity Root + Machine). */
+	readonly platformCosign?: {
 		readonly kid: string;
 		readonly signedAt: string;
 		readonly signature: string;

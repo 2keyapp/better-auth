@@ -1,6 +1,6 @@
 import type { CapabilitySet } from "./capability/types";
 import type { CosignProvider, SeatBinder } from "./pki/types";
-import type { CatalogSeed } from "./seeds/idr";
+import type { CatalogSeed } from "./seeds";
 
 export type DelegatePermissionsOptions = {
 	/**
@@ -9,9 +9,10 @@ export type DelegatePermissionsOptions = {
 	 */
 	serviceId?: string | undefined;
 	/**
-	 * Seed catalog when empty. Pass `"idr"` for the IDR default seed, or a custom seed.
+	 * Seed catalog when empty. Pass `"demo"` for the built-in example seed,
+	 * or a custom CatalogSeed (tenant-specific actions/profiles).
 	 */
-	seed?: "idr" | CatalogSeed | undefined;
+	seed?: "demo" | CatalogSeed | undefined;
 	/**
 	 * Allow `/delegate-permissions/seed-catalog` from clients.
 	 * @default false
@@ -29,7 +30,7 @@ export type DelegatePermissionsOptions = {
 	 */
 	allowServerKeygen?: boolean | undefined;
 	/**
-	 * Optional IDR co-sign provider (root + machine).
+	 * Optional platform co-sign provider (root + machine).
 	 */
 	cosign?: CosignProvider | undefined;
 	/**

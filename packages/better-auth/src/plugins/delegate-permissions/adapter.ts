@@ -10,7 +10,7 @@ import type {
 	ScopeAlgebra,
 } from "./capability/types";
 import type { CapabilityCredential } from "./pki/types";
-import type { CatalogSeed } from "./seeds/idr";
+import type { CatalogSeed } from "./seeds";
 import type {
 	DpActionRow,
 	DpCatalogMetaRow,
