@@ -37,6 +37,23 @@ export type DelegatePermissionsOptions = {
 	 * Optional permanent machine seat binder (billing integration).
 	 */
 	seatBinder?: SeatBinder | undefined;
+	/**
+	 * Called after successful entity kickstart when an Entity CA cert is registered.
+	 * Billing uses this to push `target_ca_roots` to Presence.
+	 */
+	onEntityKickstart?:
+		| ((info: {
+				entityId: string;
+				package: "personal" | "enterprise";
+				rootSki: string;
+				caCertPem?: string;
+				platformCaCertCosign?: {
+					kid: string;
+					signedAt: string;
+					signature: string;
+				};
+		  }) => void | Promise<void>)
+		| undefined;
 };
 
 export type DpActionRow = {
@@ -98,6 +115,8 @@ export type DpEntityRow = {
 	entityId: string;
 	package: string;
 	rootSki: string;
+	caCertPem: string | null;
+	platformCaCertCosign: Record<string, unknown> | null;
 	ownerUserId: string;
 	createdAt: Date;
 	updatedAt: Date;
@@ -133,4 +152,24 @@ export type DpUserCredentialBindRow = {
 	entityId: string;
 	isPrimary: boolean;
 	createdAt: Date;
+};
+
+export type DpEnrollRequestRow = {
+	id: string;
+	entityId: string;
+	host: string;
+	role: string;
+	csrPem: string;
+	subjectSki: string;
+	publicJwk: Record<string, unknown>;
+	status: string;
+	pullToken: string;
+	createdByUserId: string | null;
+	leafPem: string | null;
+	chainPem: string | null;
+	credential: Record<string, unknown> | null;
+	platformCertCosign: Record<string, unknown> | null;
+	seatId: string | null;
+	createdAt: Date;
+	updatedAt: Date;
 };

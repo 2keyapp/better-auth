@@ -1,4 +1,7 @@
 import type { CapabilitySet } from "../capability/types";
+import type { PlatformCertCosign } from "./cert-cosign";
+
+export type { PlatformCertCosign } from "./cert-cosign";
 
 export type CredentialKind =
 	| "entity_root"
@@ -56,6 +59,10 @@ export type CosignProvider = {
 		credential: CapabilityCredential,
 		seatId: string,
 	) => Promise<CapabilityCredential>;
+	/** Co-sign Entity CA root X.509 certificate. */
+	cosignCaCert: (caCertPem: string) => Promise<PlatformCertCosign>;
+	/** Co-sign machine / device leaf X.509 certificate. */
+	cosignLeafCert: (leafCertPem: string) => Promise<PlatformCertCosign>;
 };
 
 export type SeatBinder = {

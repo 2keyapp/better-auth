@@ -21,4 +21,10 @@ export const DELEGATE_PERMISSIONS_ERROR_CODES = defineErrorCodes({
 	SEAT_BIND_FAILED: "Failed to bind a permanent machine seat",
 	ISSUER_UNAUTHORIZED: "Issuer is not allowed to create this credential",
 	INVALID_HOST: "Machine host name is invalid for the entity",
+	ENROLL_NOT_FOUND: "Enrollment request not found",
+	ENROLL_NOT_PENDING: "Enrollment request is not pending",
+	ENROLL_NOT_READY: "Enrollment result is not ready to pull",
+	INVALID_CSR: "CSR is invalid or does not match subject public key",
+	CERT_MISMATCH: "Signed leaf certificate does not match enrollment CSR",
+	CA_CERT_REQUIRED: "Entity CA certificate is required",
 });

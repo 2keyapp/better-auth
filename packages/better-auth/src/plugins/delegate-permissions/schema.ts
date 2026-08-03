@@ -181,6 +181,14 @@ export const schema = {
 				type: "string",
 				required: true,
 			},
+			caCertPem: {
+				type: "string",
+				required: false,
+			},
+			platformCaCertCosign: {
+				type: "json",
+				required: false,
+			},
 			ownerUserId: {
 				type: "string",
 				required: true,
@@ -299,6 +307,78 @@ export const schema = {
 				required: true,
 			},
 			createdAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
+	dpEnrollRequest: {
+		fields: {
+			entityId: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			host: {
+				type: "string",
+				required: true,
+			},
+			role: {
+				type: "string",
+				required: true,
+			},
+			csrPem: {
+				type: "string",
+				required: true,
+			},
+			subjectSki: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			publicJwk: {
+				type: "json",
+				required: true,
+			},
+			status: {
+				type: "string",
+				required: true,
+				defaultValue: "pending",
+			},
+			pullToken: {
+				type: "string",
+				required: true,
+				unique: true,
+			},
+			createdByUserId: {
+				type: "string",
+				required: false,
+			},
+			leafPem: {
+				type: "string",
+				required: false,
+			},
+			chainPem: {
+				type: "string",
+				required: false,
+			},
+			credential: {
+				type: "json",
+				required: false,
+			},
+			platformCertCosign: {
+				type: "json",
+				required: false,
+			},
+			seatId: {
+				type: "string",
+				required: false,
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+			updatedAt: {
 				type: "date",
 				required: true,
 			},

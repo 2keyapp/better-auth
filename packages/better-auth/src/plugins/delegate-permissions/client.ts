@@ -17,6 +17,13 @@ export const delegatePermissionsClient = () => {
 			"/delegate-permissions/kickstart-entity": "POST",
 			"/delegate-permissions/issue-delegate": "POST",
 			"/delegate-permissions/issue-machine": "POST",
+			"/delegate-permissions/enroll-create": "POST",
+			"/delegate-permissions/enroll-list": "GET",
+			"/delegate-permissions/enroll-approve": "POST",
+			"/delegate-permissions/enroll-reject": "POST",
+			"/delegate-permissions/enroll-pull": "POST",
+			"/delegate-permissions/enroll-instant": "POST",
+			"/delegate-permissions/enroll-machine-permissions": "POST",
 		},
 	} satisfies BetterAuthClientPlugin;
 };

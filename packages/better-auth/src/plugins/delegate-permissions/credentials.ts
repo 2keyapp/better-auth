@@ -13,11 +13,7 @@ import {
 	zoneUnderParent,
 } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
-import {
-	attachPlatformCosign,
-	generateEd25519KeyPair,
-	issueCredential,
-} from "./pki";
+import { generateEd25519KeyPair, issueCredential } from "./pki";
 import type {
 	CapabilityCredential,
 	CosignProvider,
@@ -26,6 +22,7 @@ import type {
 	SeatBinder,
 } from "./pki/types";
 import type { CatalogSeed } from "./seeds";
+import type { DelegatePermissionsOptions } from "./types";
 
 type DpAdapter = ReturnType<typeof getDelegatePermissionsAdapter>;
 
@@ -70,25 +67,6 @@ async function ensureCatalog(
 	return catalog;
 }
 
-function defaultTestCosign(platformKey: KeyPairMaterial): CosignProvider {
-	return {
-		async cosignRoot(credential) {
-			return attachPlatformCosign(
-				credential,
-				platformKey.privateJwk,
-				platformKey.ski,
-			);
-		},
-		async cosignMachine(credential, _seatId) {
-			return attachPlatformCosign(
-				credential,
-				platformKey.privateJwk,
-				platformKey.ski,
-			);
-		},
-	};
-}
-
 export function createCredentialEndpoints(opts: {
 	serviceId: string;
 	configuredSeed: CatalogSeed | null;
@@ -97,6 +75,8 @@ export function createCredentialEndpoints(opts: {
 	seatBinder?: SeatBinder;
 	/** Lazy test platform key when cosign not provided but server keygen allowed */
 	getFallbackCosignKey?: () => Promise<KeyPairMaterial>;
+	resolveCosign: () => Promise<CosignProvider>;
+	onEntityKickstart?: DelegatePermissionsOptions["onEntityKickstart"];
 }) {
 	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
 		getDelegatePermissionsAdapter(adapter, opts.serviceId);
@@ -110,6 +90,13 @@ export function createCredentialEndpoints(opts: {
 				body: z.object({
 					entityId: z.string().min(1),
 					package: z.enum(["personal", "enterprise"]),
+					/** Client-generated Entity Root + Root Admin (production). */
+					rootPublicJwk: z.record(z.string(), z.unknown()).optional(),
+					adminPublicJwk: z.record(z.string(), z.unknown()).optional(),
+					rootCredential: z.record(z.string(), z.unknown()).optional(),
+					adminCredential: z.record(z.string(), z.unknown()).optional(),
+					/** Self-signed Entity CA X.509 PEM (required for mTLS enroll). */
+					caCertPem: z.string().optional(),
 				}),
 				metadata: {
 					openapi: {
@@ -119,10 +106,17 @@ export function createCredentialEndpoints(opts: {
 				},
 			},
 			async (ctx) => {
-				if (!opts.allowServerKeygen) {
+				const clientKeyed =
+					!!ctx.body.rootPublicJwk &&
+					!!ctx.body.adminPublicJwk &&
+					!!ctx.body.rootCredential &&
+					!!ctx.body.adminCredential &&
+					!!ctx.body.caCertPem;
+
+				if (!opts.allowServerKeygen && !clientKeyed) {
 					throw APIError.from("BAD_REQUEST", {
 						message:
-							"Server keygen disabled; provide client-generated keys (future CSR path)",
+							"Server keygen disabled; provide client-generated root/admin JWKs, signed credentials, and caCertPem",
 						code: "SERVER_KEYGEN_DISABLED",
 					});
 				}
@@ -146,6 +140,62 @@ export function createCredentialEndpoints(opts: {
 					entityId,
 				);
 
+				const cosign = await opts.resolveCosign();
+
+				if (clientKeyed) {
+					let rootCredential = ctx.body
+						.rootCredential as unknown as CapabilityCredential;
+					const adminCredential = ctx.body
+						.adminCredential as unknown as CapabilityCredential;
+					rootCredential = await cosign.cosignRoot(rootCredential);
+					const platformCaCertCosign = await cosign.cosignCaCert(
+						ctx.body.caCertPem!,
+					);
+
+					await dp.createEntity({
+						entityId,
+						package: entityPackage,
+						rootSki: rootCredential.ski,
+						ownerUserId: ctx.context.session.user.id,
+						caCertPem: ctx.body.caCertPem!,
+						platformCaCertCosign: platformCaCertCosign as unknown as Record<
+							string,
+							unknown
+						>,
+					});
+					await dp.createCredential({ credential: rootCredential });
+					await dp.createCredential({ credential: adminCredential });
+					await dp.bindUserCredential({
+						userId: ctx.context.session.user.id,
+						credentialSki: adminCredential.ski,
+						entityId,
+						isPrimary: true,
+					});
+					await dp.upsertPrincipalGrant({
+						userId: ctx.context.session.user.id,
+						entityId,
+						permissions: basePermissions,
+						profile: profileName,
+					});
+
+					await opts.onEntityKickstart?.({
+						entityId,
+						package: entityPackage,
+						rootSki: rootCredential.ski,
+						caCertPem: ctx.body.caCertPem,
+						platformCaCertCosign,
+					});
+
+					return {
+						entityId,
+						package: entityPackage,
+						root: { credential: rootCredential },
+						rootAdmin: { credential: adminCredential },
+						caCertPem: ctx.body.caCertPem,
+						platformCaCertCosign,
+					};
+				}
+
 				const rootKeys = await generateEd25519KeyPair();
 				const adminKeys = await generateEd25519KeyPair();
 
@@ -159,14 +209,7 @@ export function createCredentialEndpoints(opts: {
 					package: entityPackage,
 				});
 
-				const cosign =
-					opts.cosign ??
-					(opts.getFallbackCosignKey
-						? defaultTestCosign(await opts.getFallbackCosignKey())
-						: undefined);
-				if (cosign) {
-					rootCredential = await cosign.cosignRoot(rootCredential);
-				}
+				rootCredential = await cosign.cosignRoot(rootCredential);
 
 				const adminCredential = await issueCredential({
 					kind: "root_admin",
@@ -198,6 +241,12 @@ export function createCredentialEndpoints(opts: {
 					entityId,
 					permissions: basePermissions,
 					profile: profileName,
+				});
+
+				await opts.onEntityKickstart?.({
+					entityId,
+					package: entityPackage,
+					rootSki: rootKeys.ski,
 				});
 
 				return {
@@ -495,17 +544,7 @@ export function createCredentialEndpoints(opts: {
 					seatId = `dev-seat-${subject.ski.slice(0, 12)}`;
 				}
 
-				const cosign =
-					opts.cosign ??
-					(opts.getFallbackCosignKey
-						? defaultTestCosign(await opts.getFallbackCosignKey())
-						: undefined);
-				if (!cosign) {
-					throw APIError.from(
-						"BAD_REQUEST",
-						DELEGATE_PERMISSIONS_ERROR_CODES.COSIGN_REQUIRED,
-					);
-				}
+				const cosign = await opts.resolveCosign();
 				credential = await cosign.cosignMachine(credential, seatId);
 
 				await dp.claimName({

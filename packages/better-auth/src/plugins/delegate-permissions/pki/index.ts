@@ -1,3 +1,8 @@
+export type { PlatformCertCosign } from "./cert-cosign";
+export {
+	attachPlatformCertCosign,
+	verifyPlatformCertCosign,
+} from "./cert-cosign";
 export {
 	attachPlatformCosign,
 	issueCredential,

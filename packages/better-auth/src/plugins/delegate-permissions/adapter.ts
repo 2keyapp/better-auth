@@ -15,6 +15,7 @@ import type {
 	DpActionRow,
 	DpCatalogMetaRow,
 	DpCredentialRow,
+	DpEnrollRequestRow,
 	DpEntityRow,
 	DpNameOccupancyRow,
 	DpPrincipalGrantRow,
@@ -307,6 +308,8 @@ export function getDelegatePermissionsAdapter(
 			package: string;
 			rootSki: string;
 			ownerUserId: string;
+			caCertPem?: string | null;
+			platformCaCertCosign?: Record<string, unknown> | null;
 		}): Promise<DpEntityRow> {
 			const now = new Date();
 			return adapter.create<Omit<DpEntityRow, "id">, DpEntityRow>({
@@ -315,6 +318,8 @@ export function getDelegatePermissionsAdapter(
 					entityId: input.entityId,
 					package: input.package,
 					rootSki: input.rootSki,
+					caCertPem: input.caCertPem ?? null,
+					platformCaCertCosign: input.platformCaCertCosign ?? null,
 					ownerUserId: input.ownerUserId,
 					createdAt: now,
 					updatedAt: now,
@@ -404,6 +409,98 @@ export function getDelegatePermissionsAdapter(
 					},
 				},
 			);
+		},
+
+		async createEnrollRequest(input: {
+			entityId: string;
+			host: string;
+			role: string;
+			csrPem: string;
+			subjectSki: string;
+			publicJwk: Record<string, unknown>;
+			pullToken: string;
+			createdByUserId?: string | null;
+			status?: string;
+			leafPem?: string | null;
+			chainPem?: string | null;
+			credential?: Record<string, unknown> | null;
+			platformCertCosign?: Record<string, unknown> | null;
+			seatId?: string | null;
+		}): Promise<DpEnrollRequestRow> {
+			const now = new Date();
+			return adapter.create<Omit<DpEnrollRequestRow, "id">, DpEnrollRequestRow>(
+				{
+					model: "dpEnrollRequest",
+					data: {
+						entityId: input.entityId,
+						host: input.host,
+						role: input.role,
+						csrPem: input.csrPem,
+						subjectSki: input.subjectSki,
+						publicJwk: input.publicJwk,
+						status: input.status ?? "pending",
+						pullToken: input.pullToken,
+						createdByUserId: input.createdByUserId ?? null,
+						leafPem: input.leafPem ?? null,
+						chainPem: input.chainPem ?? null,
+						credential: input.credential ?? null,
+						platformCertCosign: input.platformCertCosign ?? null,
+						seatId: input.seatId ?? null,
+						createdAt: now,
+						updatedAt: now,
+					},
+				},
+			);
+		},
+
+		async getEnrollRequest(id: string): Promise<DpEnrollRequestRow | null> {
+			return adapter.findOne<DpEnrollRequestRow>({
+				model: "dpEnrollRequest",
+				where: [{ field: "id", value: id }],
+			});
+		},
+
+		async getEnrollByPullToken(
+			pullToken: string,
+		): Promise<DpEnrollRequestRow | null> {
+			return adapter.findOne<DpEnrollRequestRow>({
+				model: "dpEnrollRequest",
+				where: [{ field: "pullToken", value: pullToken }],
+			});
+		},
+
+		async listEnrollRequests(
+			entityId: string,
+			status?: string,
+		): Promise<DpEnrollRequestRow[]> {
+			const where: { field: string; value: string }[] = [
+				{ field: "entityId", value: entityId },
+			];
+			if (status) {
+				where.push({ field: "status", value: status });
+			}
+			return adapter.findMany<DpEnrollRequestRow>({
+				model: "dpEnrollRequest",
+				where,
+			});
+		},
+
+		async updateEnrollRequest(
+			id: string,
+			update: Partial<{
+				status: string;
+				leafPem: string | null;
+				chainPem: string | null;
+				credential: Record<string, unknown> | null;
+				platformCertCosign: Record<string, unknown> | null;
+				seatId: string | null;
+			}>,
+		): Promise<DpEnrollRequestRow | null> {
+			return adapter.update<DpEnrollRequestRow>({
+				model: "dpEnrollRequest",
+				where: [{ field: "id", value: id }],
+				update: { ...update, updatedAt: new Date() },
+			});
 		},
 	};
 }
