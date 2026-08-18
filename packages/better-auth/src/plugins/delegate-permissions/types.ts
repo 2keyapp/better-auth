@@ -48,9 +48,8 @@ export type DelegatePermissionsOptions = {
 				rootSki: string;
 				caCertPem?: string;
 				platformCaCertCosign?: {
-					kid: string;
-					signedAt: string;
-					signature: string;
+					platformCertPem: string;
+					platformRootPem: string;
 				};
 		  }) => void | Promise<void>)
 		| undefined;
@@ -154,10 +153,25 @@ export type DpUserCredentialBindRow = {
 	createdAt: Date;
 };
 
+/** CSR inbox kinds — machines + zone/interim admin (server-stored pending CSR). */
+export type DpEnrollKind =
+	| "machine_target"
+	| "machine_source"
+	| "zone_authority"
+	| "interim_admin"
+	/** @deprecated use machine_target */
+	| "target"
+	/** @deprecated use machine_source */
+	| "source";
+
 export type DpEnrollRequestRow = {
 	id: string;
 	entityId: string;
+	/** Full locator `host--entity` for machines; empty string for admin kinds. */
 	host: string;
+	/** Zone path for zone_authority; null otherwise. */
+	zone: string | null;
+	/** Enroll kind (role column; stores DpEnrollKind). */
 	role: string;
 	csrPem: string;
 	subjectSki: string;

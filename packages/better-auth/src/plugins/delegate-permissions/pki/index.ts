@@ -9,6 +9,13 @@ export {
 	verifyCredentialSignature,
 } from "./credential";
 export { generateEd25519KeyPair } from "./keys";
+export type { PlatformCaMaterial, PlatformCertIssue } from "./platform-ca";
+export {
+	createPlatformRootPem,
+	generateEphemeralPlatformCa,
+	issuePlatformEndorsementCert,
+	loadPlatformCaMaterial,
+} from "./platform-ca";
 export type {
 	CapabilityCredential,
 	CosignProvider,

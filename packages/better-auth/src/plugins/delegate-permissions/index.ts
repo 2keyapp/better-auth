@@ -13,9 +13,13 @@ import { createCredentialEndpoints } from "./credentials";
 import { createEnrollEndpoints } from "./enroll";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
-import { attachPlatformCosign, generateEd25519KeyPair } from "./pki";
-import { attachPlatformCertCosign } from "./pki/cert-cosign";
-import type { CosignProvider, KeyPairMaterial } from "./pki/types";
+import { attachPlatformCosign } from "./pki";
+import {
+	generateEphemeralPlatformCa,
+	issuePlatformEndorsementCert,
+	type PlatformCaMaterial,
+} from "./pki/platform-ca";
+import type { CosignProvider } from "./pki/types";
 import { schema } from "./schema";
 import type { CatalogSeed } from "./seeds";
 import { DEMO_CATALOG_SEED } from "./seeds";
@@ -36,14 +40,20 @@ export { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 export type {
 	CapabilityCredential,
 	CosignProvider,
+	PlatformCaMaterial,
 	PlatformCertCosign,
+	PlatformCertIssue,
 	SeatBinder,
 } from "./pki";
 export {
 	attachPlatformCertCosign,
 	attachPlatformCosign,
+	createPlatformRootPem,
 	generateEd25519KeyPair,
+	generateEphemeralPlatformCa,
 	issueCredential,
+	issuePlatformEndorsementCert,
+	loadPlatformCaMaterial,
 	verifyCredentialSignature,
 	verifyPlatformCertCosign,
 } from "./pki";
@@ -73,35 +83,38 @@ function resolveSeed(
 	return { ...seed, serviceId: seed.serviceId || serviceId };
 }
 
-function defaultTestCosign(platformKey: KeyPairMaterial): CosignProvider {
+function defaultTestCosign(platform: PlatformCaMaterial): CosignProvider {
 	return {
 		async cosignRoot(credential) {
 			return attachPlatformCosign(
 				credential,
-				platformKey.privateJwk,
-				platformKey.ski,
+				platform.key.privateJwk,
+				platform.key.ski,
 			);
 		},
 		async cosignMachine(credential, _seatId) {
 			return attachPlatformCosign(
 				credential,
-				platformKey.privateJwk,
-				platformKey.ski,
+				platform.key.privateJwk,
+				platform.key.ski,
 			);
 		},
 		async cosignCaCert(caCertPem) {
-			return attachPlatformCertCosign(
-				caCertPem,
-				platformKey.privateJwk,
-				platformKey.ski,
-			);
+			return issuePlatformEndorsementCert({
+				platform,
+				entityCertPem: caCertPem,
+				kind: "ca",
+			});
 		},
-		async cosignLeafCert(leafCertPem) {
-			return attachPlatformCertCosign(
-				leafCertPem,
-				platformKey.privateJwk,
-				platformKey.ski,
-			);
+		async cosignLeafCert(leafCertPem, opts) {
+			return issuePlatformEndorsementCert({
+				platform,
+				entityCertPem: leafCertPem,
+				kind: "leaf",
+				chainPem: opts?.chainPem,
+				subjectCn: opts?.subjectSki,
+				host: opts?.host,
+			});
 		},
 	};
 }
@@ -123,16 +136,16 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const allowClientSeed = options?.allowClientSeed ?? false;
 	const allowServerKeygen = options?.allowServerKeygen ?? false;
 	const configuredSeed = resolveSeed(options?.seed, serviceId);
-	let fallbackCosignKey: KeyPairMaterial | undefined;
+	let fallbackPlatformCa: PlatformCaMaterial | undefined;
 
 	const resolveCosign = async (): Promise<CosignProvider> => {
 		if (options?.cosign) {
 			return options.cosign;
 		}
-		if (!fallbackCosignKey) {
-			fallbackCosignKey = await generateEd25519KeyPair();
+		if (!fallbackPlatformCa) {
+			fallbackPlatformCa = await generateEphemeralPlatformCa();
 		}
-		return defaultTestCosign(fallbackCosignKey);
+		return defaultTestCosign(fallbackPlatformCa);
 	};
 
 	const credentialEndpoints = createCredentialEndpoints({
@@ -142,10 +155,10 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		cosign: options?.cosign,
 		seatBinder: options?.seatBinder,
 		getFallbackCosignKey: async () => {
-			if (!fallbackCosignKey) {
-				fallbackCosignKey = await generateEd25519KeyPair();
+			if (!fallbackPlatformCa) {
+				fallbackPlatformCa = await generateEphemeralPlatformCa();
 			}
-			return fallbackCosignKey;
+			return fallbackPlatformCa.key;
 		},
 		resolveCosign,
 		onEntityKickstart: options?.onEntityKickstart,

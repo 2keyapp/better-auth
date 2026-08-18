@@ -1,7 +1,8 @@
 import type { CapabilitySet } from "../capability/types";
-import type { PlatformCertCosign } from "./cert-cosign";
+import type { PlatformCertIssue } from "./platform-ca";
 
 export type { PlatformCertCosign } from "./cert-cosign";
+export type { PlatformCertIssue } from "./platform-ca";
 
 export type CredentialKind =
 	| "entity_root"
@@ -59,10 +60,24 @@ export type CosignProvider = {
 		credential: CapabilityCredential,
 		seatId: string,
 	) => Promise<CapabilityCredential>;
-	/** Co-sign Entity CA root X.509 certificate. */
-	cosignCaCert: (caCertPem: string) => Promise<PlatformCertCosign>;
-	/** Co-sign machine / device leaf X.509 certificate. */
-	cosignLeafCert: (leafCertPem: string) => Promise<PlatformCertCosign>;
+	/**
+	 * Platform CA X.509-signs an Entity CA certificate (endorsement for the
+	 * same SPKI). Returns Platform-signed CA PEM + Platform Root PEM.
+	 */
+	cosignCaCert: (caCertPem: string) => Promise<PlatformCertIssue>;
+	/**
+	 * After Entity admin signs a leaf: Platform CA issues an endorsement
+	 * certificate for the same device SPKI. Pass `chainPem` to verify the
+	 * Entity signature before endorsement.
+	 */
+	cosignLeafCert: (
+		leafCertPem: string,
+		opts?: {
+			chainPem?: string;
+			subjectSki?: string;
+			host?: string;
+		},
+	) => Promise<PlatformCertIssue>;
 };
 
 export type SeatBinder = {
@@ -71,6 +86,8 @@ export type SeatBinder = {
 		host: string;
 		machineSki: string;
 		payingPartyId?: string;
+		/** Device role — both target and source consume device seats. */
+		role?: "target" | "source";
 	}) => Promise<{ seatId: string }>;
 	release?: (seatId: string) => Promise<void>;
 };
