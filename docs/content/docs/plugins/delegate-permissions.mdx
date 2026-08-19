@@ -175,6 +175,10 @@ const pulled = await authClient.$fetch("/delegate-permissions/enroll-pull", {
 
 Enrollment kinds: `machine_target`, `machine_source`, `zone_authority`, `interim_admin` (`target` / `source` are aliases). Machine host form is `{path}--{entityId}`.
 
+<Callout type="warn">
+  If your product adds a domain suffix to machine identities (e.g. `db1--acme.com.example.io`), strip it before passing `host` to the plugin. The plugin only understands the canonical `{path}--{entityId}` form.
+</Callout>
+
 `enroll-instant` is the same-host shortcut when admin CA keys are local (create + approve in one call).
 
 ### Platform Root for the TLS terminator
