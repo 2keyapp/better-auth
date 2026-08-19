@@ -1,4 +1,3 @@
-/* cspell:ignore FQHN */
 import { describe, expect, it } from "vitest";
 import { parseMachineHost } from "./names";
 
@@ -9,15 +8,9 @@ describe("parseMachineHost", () => {
 		).toEqual({ path: "laptop" });
 	});
 
-	it("accepts verified FQHN with .idr.to suffix", () => {
-		expect(
-			parseMachineHost("laptop--user@example.com.idr.to", "user@example.com"),
-		).toEqual({ path: "laptop" });
-	});
-
 	it("rejects host that does not end with --{entity}", () => {
 		expect(
-			parseMachineHost("laptop--other@example.com.idr.to", "user@example.com"),
+			parseMachineHost("laptop--other@example.com", "user@example.com"),
 		).toBeNull();
 	});
 

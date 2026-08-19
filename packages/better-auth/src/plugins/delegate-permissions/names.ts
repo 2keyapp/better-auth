@@ -1,11 +1,9 @@
-/* cspell:ignore FQHN */
 /**
  * Host / zone naming helpers (no role markers in the host string).
- * Machine host form: `{path}--{entityId}` (logical) or `{path}--{entityId}.idr.to` (verified FQHN).
+ * Machine host form: `{path}--{entityId}`.
  */
 
 const SEPARATOR = "--";
-const IDR_TO_SUFFIX = ".idr.to";
 
 function isValidHostPath(path: string): boolean {
 	if (!path || path.includes(SEPARATOR)) return false;
@@ -24,7 +22,7 @@ function isValidHostPath(path: string): boolean {
 
 /**
  * Parse `{path}--{entity}` for `entityId`.
- * Accepts optional trailing `.idr.to` (verified FQHN from billing / Presence).
+ * Callers should strip any product-specific domain suffix before calling.
  */
 export function parseMachineHost(
 	host: string,
@@ -35,9 +33,6 @@ export function parseMachineHost(
 	if (!canonicalHost || !entity) return null;
 	if (canonicalHost.endsWith(".")) {
 		canonicalHost = canonicalHost.slice(0, -1);
-	}
-	if (canonicalHost.endsWith(IDR_TO_SUFFIX)) {
-		canonicalHost = canonicalHost.slice(0, -IDR_TO_SUFFIX.length);
 	}
 
 	const suffix = `${SEPARATOR}${entity}`;
