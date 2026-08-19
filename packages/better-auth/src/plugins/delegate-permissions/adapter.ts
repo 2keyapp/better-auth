@@ -351,6 +351,9 @@ export function getDelegatePermissionsAdapter(
 					host: c.host ?? null,
 					seatId: input.seatId ?? null,
 					status: "active",
+					revokedAt: null,
+					revokedReason: null,
+					renewedBySki: null,
 					createdAt: new Date(),
 				},
 			});
