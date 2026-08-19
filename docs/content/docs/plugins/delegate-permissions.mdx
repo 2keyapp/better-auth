@@ -1,0 +1,418 @@
+---
+title: Delegate Permissions
+description: Capability-based authorization, delegated grants, and machine certificate enrollment
+---
+
+`AuthZ` `Capabilities` `mTLS` `X.509`
+
+The Delegate Permissions plugin is a **capability engine**: actions and scopes live in a per-app catalog, grants must attenuate (`child ⊆ parent`), and machines can enroll with a PKCS#10 CSR. A Platform CA co-signs device leaves so a TLS terminator (for example HAProxy) can trust **one** public key.
+
+This plugin is distinct from [Device Authorization](/docs/plugins/device-authorization) (OAuth RFC 8628).
+
+<Callout type="info">
+  Product catalogs (action names, profiles) belong in your app. Pass a `CatalogSeed` at deploy time. The built-in `seed: "demo"` catalog is for local tests only.
+</Callout>
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your **auth** config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { delegatePermissions } from "better-auth/plugins" // [!code highlight]
+
+    export const auth = betterAuth({
+        plugins: [
+            delegatePermissions({ // [!code highlight]
+                serviceId: "my-app", // [!code highlight]
+                seed: "demo", // [!code highlight]
+            }), // [!code highlight]
+        ]
+    })
+    ```
+
+    For production, pass your own catalog and a **stable** Platform CA (see [Options](#options)). `seed: "demo"` already includes a demo Platform CA so `GET /delegate-permissions/platform-root` works locally — do not use that key in production.
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    Run the migration or generate the schema to add the necessary fields and tables to the database.
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+        ```package-install
+        npx auth migrate
+        ```
+      </Tab>
+
+      <Tab value="generate">
+        ```package-install
+        npx auth generate
+        ```
+      </Tab>
+    </Tabs>
+
+    See the [Schema](#schema) section to add the fields manually.
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { delegatePermissionsClient } from "better-auth/client/plugins" // [!code highlight]
+
+    export const authClient = createAuthClient({
+        plugins: [
+            delegatePermissionsClient() // [!code highlight]
+        ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Capability model
+
+```text
+Capability = { action, scope, delegable }
+CapabilitySet = Capability[]
+Scope = map of dimension → value (string | string[])
+```
+
+* A catalog defines **actions** and **scope dimensions** (each dimension has an algebra: `exact`, `dns_prefix`, or `set`).
+* Profiles expand to a `CapabilitySet`. Every child grant must satisfy `child ⊆ parent` (action coverage, scope subset, `delegable` rules).
+* An omitted scope dimension means unrestricted for that dimension. The child may narrow.
+
+| Algebra      | Subset rule                                                              |
+| ------------ | ------------------------------------------------------------------------ |
+| `exact`      | child value === parent value                                             |
+| `dns_prefix` | child === parent OR child ends with `.` + parent; parent `""` covers all |
+| `set`        | every child member ∈ parent set                                          |
+
+## Usage
+
+Client calls below use `$fetch` against the plugin paths (same pattern as other plugins that do not add named client methods).
+
+### Seed and read the catalog
+
+Seeding from the client is disabled unless `allowClientSeed: true`. Prefer seeding from `seed` in the plugin options.
+
+```ts
+const { data } = await authClient.$fetch("/delegate-permissions/catalog", {
+  method: "GET",
+})
+```
+
+### Principal grant, session capabilities, authorize
+
+```ts
+await authClient.$fetch("/delegate-permissions/principal-grant", {
+  method: "POST",
+  body: { profile: "personal_root", entityId: "acme.com" },
+})
+
+await authClient.$fetch("/delegate-permissions/issue-session-capabilities", {
+  method: "POST",
+  body: {},
+})
+
+const { data } = await authClient.$fetch("/delegate-permissions/authorize", {
+  method: "POST",
+  body: {
+    action: "machine.bind",
+    resource: { name: "laptop", entity: "acme.com" },
+  },
+})
+// { allowed: true } | { allowed: false, code, message }
+```
+
+`assert-subset` checks attenuation without persisting a grant.
+
+### Kickstart an entity
+
+Creates Entity Root + Root Admin credentials and binds the session user. With `allowServerKeygen: true` the server also issues an Entity CA and Platform-endorses it (private JWKs returned once). In production, generate keys on the client and send signed credentials plus `caCertPem`.
+
+```ts
+const { data } = await authClient.$fetch("/delegate-permissions/kickstart-entity", {
+  method: "POST",
+  body: {
+    entityId: "acme.com",
+    package: "enterprise", // or "personal"
+  },
+})
+```
+
+### Machine enrollment (CSR)
+
+Private keys stay on the device.
+
+1. Device: generate Ed25519 + PKCS#10 CSR (`createDeviceCsr()` from the plugin, or your CLI).
+2. `POST /delegate-permissions/enroll-create` — server parses and verifies the CSR.
+3. Admin signs the leaf with the Entity CA (SPKI must match the CSR) and calls `enroll-approve`.
+4. Platform CA issues an endorsement leaf (`platformCertPem`) for the same public key.
+5. Device: `POST /delegate-permissions/enroll-pull` with `pullToken`.
+
+```ts
+const created = await authClient.$fetch("/delegate-permissions/enroll-create", {
+  method: "POST",
+  body: {
+    entityId: "acme.com",
+    host: "laptop--acme.com",
+    kind: "machine_target",
+    csrPem,
+  },
+})
+
+const pulled = await authClient.$fetch("/delegate-permissions/enroll-pull", {
+  method: "POST",
+  body: { pullToken: created.data.pullToken },
+})
+// certPem, chainPem, platformCertPem, platformRootPem, credential
+```
+
+Enrollment kinds: `machine_target`, `machine_source`, `zone_authority`, `interim_admin` (`target` / `source` are aliases). Machine host form is `{path}--{entityId}`.
+
+`enroll-instant` is the same-host shortcut when admin CA keys are local (create + approve in one call).
+
+### Platform Root for the TLS terminator
+
+```ts
+const { data } = await authClient.$fetch("/delegate-permissions/platform-root", {
+  method: "GET",
+})
+// data.platformRootPem → HAProxy / nginx `ca-file`
+```
+
+The device presents **`platformCertPem`** (Platform-signed leaf, `clientAuth` EKU). The terminator verifies against that single Platform Root — not the Entity CA.
+
+Without `platformCa` (and without `seed: "demo"`), this endpoint returns `COSIGN_REQUIRED`.
+
+### Credential lifecycle
+
+After enrollment, credentials can be revoked, renewed, or decommissioned.
+
+#### Check credential status
+
+```ts
+const { data } = await authClient.$fetch(
+  "/delegate-permissions/credential-status?ski=<ski>",
+  { method: "GET" },
+)
+// { ski, status, entityId, kind, host, revokedAt, revokedReason, renewedBySki }
+```
+
+#### List credentials for an entity
+
+```ts
+const { data } = await authClient.$fetch(
+  "/delegate-permissions/credential-list?entityId=acme.com&status=active",
+  { method: "GET" },
+)
+// { credentials: [{ ski, status, kind, host, ... }] }
+```
+
+#### Revoke a credential
+
+Marks the credential as `revoked`. The certificate remains cryptographically valid but the server will no longer honor it.
+
+```ts
+await authClient.$fetch("/delegate-permissions/credential-revoke", {
+  method: "POST",
+  body: {
+    ski: "<credential-ski>",
+    reason: "key_compromise", // decommissioned | key_compromise | machine_lost | replaced | organization_policy | renewed | other
+  },
+})
+```
+
+#### Decommission a machine
+
+Revokes the credential **and** releases the machine name so a new device can re-enroll with the same host identity.
+
+```ts
+await authClient.$fetch("/delegate-permissions/machine-decommission", {
+  method: "POST",
+  body: {
+    ski: "<credential-ski>",
+    reason: "decommissioned",
+  },
+})
+```
+
+#### Renew a machine certificate
+
+Issues a new certificate (new key, new CSR) for the **same** machine identity. The old credential is marked `renewed` with a pointer to the new SKI.
+
+```ts
+await authClient.$fetch("/delegate-permissions/machine-renew", {
+  method: "POST",
+  body: {
+    ski: "<old-ski>",
+    csrPem: newCsrPem,
+    leafPem: adminSignedLeafPem,
+    chainPem,
+    credential: newCredential,
+    issuerSki: "<issuer-ski>",
+  },
+})
+// { oldSki, newSki, status: "renewed", platformCertPem, platformRootPem }
+```
+
+## Options
+
+export const delegatePermissionsOptionsType = {
+  serviceId: {
+    description: "Catalog / service id for this app database. Default: `default`.",
+    type: "string",
+    required: false,
+  },
+  seed: {
+    description: '`"demo"` for the built-in catalog + demo Platform CA, or a `CatalogSeed` (`actions`, `scopeDimensions`, `profiles`).',
+    type: '"demo" | CatalogSeed',
+    required: false,
+  },
+  platformCa: {
+    description: "Stable Platform CA (`privateJwk`, optional `rootPem`, `commonName`). Required in production. The TLS terminator `ca-file` is this root.",
+    type: "{ privateJwk, rootPem?, commonName? }",
+    required: false,
+  },
+  allowServerKeygen: {
+    description: "Allow the server to mint Entity Root / subject keypairs on kickstart (returns private JWKs once). Prefer client-held keys in production. Default: `false`.",
+    type: "boolean",
+    required: false,
+  },
+  allowEphemeralPlatformCa: {
+    description: "Mint a throwaway Platform CA when `platformCa` is omitted. Defaults to `allowServerKeygen`. Must be `false` in production.",
+    type: "boolean",
+    required: false,
+  },
+  allowClientSeed: {
+    description: "Allow `POST /delegate-permissions/seed-catalog` from clients. Default: `false`.",
+    type: "boolean",
+    required: false,
+  },
+  sessionGrantExpiresIn: {
+    description: "Session grant lifetime in seconds. Default: `3600`.",
+    type: "number",
+    required: false,
+  },
+  cosign: {
+    description: "Optional `CosignProvider`. When omitted, the plugin uses `platformCa`.",
+    type: "CosignProvider",
+    required: false,
+  },
+  seatBinder: {
+    description: "Optional hook to allocate a permanent machine seat (billing) on enroll-approve / issue-machine.",
+    type: "SeatBinder",
+    required: false,
+  },
+  onEntityKickstart: {
+    description: "Called after a successful entity kickstart when an Entity CA is registered.",
+    type: "function",
+    required: false,
+  },
+}
+
+<TypeTable type={delegatePermissionsOptionsType} />
+
+Production example:
+
+```ts title="auth.ts"
+delegatePermissions({
+  serviceId: "my-app",
+  seed: myCatalogSeed,
+  platformCa: {
+    privateJwk: platformPrivateJwk,
+    rootPem: platformRootPem,
+  },
+  seatBinder: {
+    async allocateAndBind({ entityId, host, machineSki, role }) {
+      return { seatId: await billing.allocateDeviceSeat({ entityId, host, machineSki, role }) }
+    },
+  },
+})
+```
+
+## Schema
+
+The plugin adds the following tables:
+
+| Table                  | Purpose                                               |
+| ---------------------- | ----------------------------------------------------- |
+| `dpCatalogMeta`        | Catalog generation per `serviceId`                    |
+| `dpAction`             | Catalog actions                                       |
+| `dpScopeDimension`     | Catalog scope dimensions + algebra                    |
+| `dpProfile`            | Named `CapabilitySet` profiles                        |
+| `dpPrincipalGrant`     | User principal capabilities                           |
+| `dpSessionGrant`       | Session-attenuated capabilities                       |
+| `dpEntity`             | Entity root, package, CA PEM, Platform CA endorsement |
+| `dpCredential`         | Issued credentials (admin, zone, machine)             |
+| `dpUserCredentialBind` | Bind a user to a credential SKI                       |
+| `dpNameOccupancy`      | Zone vs machine name occupancy (XOR)                  |
+| `dpEnrollRequest`      | CSR inbox (pending → approved → consumed)             |
+
+### Enroll request
+
+Table Name: `dpEnrollRequest`
+
+export const dpEnrollRequestFields = [
+	{
+		name: "id",
+		type: "string",
+		description: "Enrollment id",
+		isPrimaryKey: true,
+	},
+	{
+		name: "entityId",
+		type: "string",
+		description: "Entity this CSR is for",
+	},
+	{
+		name: "host",
+		type: "string",
+		description: "Machine host `{path}--{entityId}`",
+		isOptional: true,
+	},
+	{
+		name: "csrPem",
+		type: "string",
+		description: "PKCS#10 CSR PEM",
+	},
+	{
+		name: "subjectSki",
+		type: "string",
+		description: "Subject key identifier (JWK thumbprint)",
+	},
+	{
+		name: "status",
+		type: "string",
+		description: "`pending` | `approved` | `rejected` | `consumed`",
+	},
+	{
+		name: "pullToken",
+		type: "string",
+		description: "Bearer token for enroll-pull",
+		isUnique: true,
+	},
+	{
+		name: "leafPem",
+		type: "string",
+		description: "Admin-signed leaf PEM after approve",
+		isOptional: true,
+	},
+	{
+		name: "platformCertCosign",
+		type: "json",
+		description: "Platform endorsement PEM + Platform Root PEM",
+		isOptional: true,
+	},
+];
+
+<DatabaseTable name="dpEnrollRequest" fields={dpEnrollRequestFields} />
+
+<Callout>
+  You can customize table names and fields. See the [Database concept documentation](/docs/concepts/database#custom-table-names).
+</Callout>
