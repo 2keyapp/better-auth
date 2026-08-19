@@ -12,17 +12,19 @@ import type { CapabilitySet, Resource } from "./capability/types";
 import { createCredentialEndpoints } from "./credentials";
 import { createEnrollEndpoints } from "./enroll";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
+import { createLifecycleEndpoints } from "./lifecycle";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
 import { attachPlatformCosign } from "./pki";
+import type { PlatformCaMaterial } from "./pki/platform-ca";
 import {
 	generateEphemeralPlatformCa,
 	issuePlatformEndorsementCert,
-	type PlatformCaMaterial,
+	loadPlatformCaMaterial,
 } from "./pki/platform-ca";
 import type { CosignProvider } from "./pki/types";
 import { schema } from "./schema";
 import type { CatalogSeed } from "./seeds";
-import { DEMO_CATALOG_SEED } from "./seeds";
+import { DEMO_CATALOG_SEED, DEMO_PLATFORM_CA } from "./seeds";
 import type { DelegatePermissionsOptions } from "./types";
 
 export type * from "./capability";
@@ -48,18 +50,24 @@ export type {
 export {
 	attachPlatformCertCosign,
 	attachPlatformCosign,
+	bindCsrToPublicJwk,
+	createDeviceCsr,
 	createPlatformRootPem,
+	createSelfSignedCaPem,
 	generateEd25519KeyPair,
 	generateEphemeralPlatformCa,
 	issueCredential,
 	issuePlatformEndorsementCert,
+	leafMatchesCsr,
 	loadPlatformCaMaterial,
+	signCsrWithCa,
+	verifyAgainstTrustAnchor,
 	verifyCredentialSignature,
 	verifyPlatformCertCosign,
 } from "./pki";
 export { schema } from "./schema";
 export type { CatalogSeed } from "./seeds";
-export { DEMO_CATALOG_SEED, DEMO_SERVICE_ID } from "./seeds";
+export { DEMO_CATALOG_SEED, DEMO_PLATFORM_CA, DEMO_SERVICE_ID } from "./seeds";
 export type * from "./types";
 
 declare module "@better-auth/core" {
@@ -127,25 +135,55 @@ const resourceSchema = z.record(
 /**
  * Delegate Permissions plugin.
  *
- * For the IDR tenant (`serviceId: "idr"`), see `./IDR.md` and wire
- * `seatBinder` to Billing machine seats. Catalog: `@2key/catalog-idr`.
+ * Production mTLS: set `platformCa` (stable key). The TLS terminator `ca-file`
+ * is the Platform Root from `GET /delegate-permissions/platform-root`. Machine
+ * leaves are Platform-endorsed (`platformCertPem` on enroll-pull).
+ * `seed: "demo"` includes a demo Platform CA — do not use that key in production.
  */
 export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const serviceId = options?.serviceId ?? "default";
 	const sessionGrantExpiresIn = options?.sessionGrantExpiresIn ?? 3600;
 	const allowClientSeed = options?.allowClientSeed ?? false;
 	const allowServerKeygen = options?.allowServerKeygen ?? false;
+	const allowEphemeralPlatformCa =
+		options?.allowEphemeralPlatformCa ?? allowServerKeygen;
 	const configuredSeed = resolveSeed(options?.seed, serviceId);
-	let fallbackPlatformCa: PlatformCaMaterial | undefined;
+	const demoPlatformCa =
+		options?.seed === "demo" && !options?.platformCa && !options?.cosign
+			? {
+					privateJwk: { ...DEMO_PLATFORM_CA.privateJwk },
+					commonName: DEMO_PLATFORM_CA.commonName,
+				}
+			: undefined;
+	let resolvedPlatformCa: PlatformCaMaterial | undefined;
+
+	const resolvePlatformCa = async (): Promise<PlatformCaMaterial> => {
+		if (resolvedPlatformCa) {
+			return resolvedPlatformCa;
+		}
+		if (options?.platformCa) {
+			resolvedPlatformCa = await loadPlatformCaMaterial(options.platformCa);
+			return resolvedPlatformCa;
+		}
+		if (demoPlatformCa) {
+			resolvedPlatformCa = await loadPlatformCaMaterial(demoPlatformCa);
+			return resolvedPlatformCa;
+		}
+		if (allowEphemeralPlatformCa) {
+			resolvedPlatformCa = await generateEphemeralPlatformCa();
+			return resolvedPlatformCa;
+		}
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.COSIGN_REQUIRED,
+		);
+	};
 
 	const resolveCosign = async (): Promise<CosignProvider> => {
 		if (options?.cosign) {
 			return options.cosign;
 		}
-		if (!fallbackPlatformCa) {
-			fallbackPlatformCa = await generateEphemeralPlatformCa();
-		}
-		return defaultTestCosign(fallbackPlatformCa);
+		return defaultTestCosign(await resolvePlatformCa());
 	};
 
 	const credentialEndpoints = createCredentialEndpoints({
@@ -154,12 +192,7 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		allowServerKeygen,
 		cosign: options?.cosign,
 		seatBinder: options?.seatBinder,
-		getFallbackCosignKey: async () => {
-			if (!fallbackPlatformCa) {
-				fallbackPlatformCa = await generateEphemeralPlatformCa();
-			}
-			return fallbackPlatformCa.key;
-		},
+		getFallbackCosignKey: async () => (await resolvePlatformCa()).key,
 		resolveCosign,
 		onEntityKickstart: options?.onEntityKickstart,
 	});
@@ -172,6 +205,15 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		resolveCosign,
 	});
 
+	const lifecycleEndpoints = createLifecycleEndpoints({
+		serviceId,
+		configuredSeed,
+		resolveCosign,
+		seatBinder: options?.seatBinder as
+			| { release?(seatId: string): Promise<void> }
+			| undefined,
+	});
+
 	return {
 		id: "delegate-permissions",
 		version: PACKAGE_VERSION,
@@ -180,6 +222,39 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		endpoints: {
 			...credentialEndpoints,
 			...enrollEndpoints,
+			...lifecycleEndpoints,
+			dpPlatformRoot: createAuthEndpoint(
+				"/delegate-permissions/platform-root",
+				{
+					method: "GET",
+					metadata: {
+						openapi: {
+							description:
+								"Platform Root PEM for HAProxy ca-file (public key of the co-signing CA)",
+						},
+					},
+				},
+				async () => {
+					if (
+						options?.platformCa ||
+						demoPlatformCa ||
+						allowEphemeralPlatformCa
+					) {
+						const platform = await resolvePlatformCa();
+						const platformRootPem = platform.rootPem.endsWith("\n")
+							? platform.rootPem
+							: `${platform.rootPem}\n`;
+						return {
+							platformRootPem,
+							ski: platform.key.ski,
+						};
+					}
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.COSIGN_REQUIRED,
+					);
+				},
+			),
 			dpSeedCatalog: createAuthEndpoint(
 				"/delegate-permissions/seed-catalog",
 				{

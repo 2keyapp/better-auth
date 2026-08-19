@@ -1,4 +1,32 @@
-import type { BetterAuthPluginDBSchema } from "@better-auth/core/db";
+import type {
+	BetterAuthPluginDBSchema,
+	DBPrimitive,
+} from "@better-auth/core/db";
+
+/**
+ * CapabilitySet is a JSON **array**. node-pg encodes a top-level JS array as a
+ * Postgres array, not jsonb — so we stringify here instead of changing the
+ * global adapter factory (which would also rewrite unrelated json fields).
+ */
+const jsonArrayField = {
+	type: "json" as const,
+	required: true as const,
+	transform: {
+		input(value: DBPrimitive) {
+			return Array.isArray(value) ? JSON.stringify(value) : value;
+		},
+		output(value: DBPrimitive) {
+			if (typeof value !== "string") {
+				return value;
+			}
+			try {
+				return JSON.parse(value) as DBPrimitive;
+			} catch {
+				return value;
+			}
+		},
+	},
+};
 
 export const schema = {
 	dpCatalogMeta: {
@@ -80,10 +108,7 @@ export const schema = {
 				type: "string",
 				required: true,
 			},
-			permissions: {
-				type: "json",
-				required: true,
-			},
+			permissions: jsonArrayField,
 			catalogGeneration: {
 				type: "number",
 				required: true,
@@ -109,10 +134,7 @@ export const schema = {
 				type: "string",
 				required: false,
 			},
-			permissions: {
-				type: "json",
-				required: true,
-			},
+			permissions: jsonArrayField,
 			profile: {
 				type: "string",
 				required: false,
@@ -152,10 +174,7 @@ export const schema = {
 					field: "id",
 				},
 			},
-			permissions: {
-				type: "json",
-				required: true,
-			},
+			permissions: jsonArrayField,
 			expiresAt: {
 				type: "date",
 				required: true,
@@ -248,6 +267,18 @@ export const schema = {
 				type: "string",
 				required: true,
 				defaultValue: "active",
+			},
+			revokedAt: {
+				type: "date",
+				required: false,
+			},
+			revokedReason: {
+				type: "string",
+				required: false,
+			},
+			renewedBySki: {
+				type: "string",
+				required: false,
 			},
 			createdAt: {
 				type: "date",

@@ -411,6 +411,57 @@ export function getDelegatePermissionsAdapter(
 			);
 		},
 
+		async updateCredentialStatus(
+			ski: string,
+			update: {
+				status: string;
+				revokedAt?: Date | null;
+				revokedReason?: string | null;
+				renewedBySki?: string | null;
+			},
+		): Promise<DpCredentialRow | null> {
+			return adapter.update<DpCredentialRow>({
+				model: "dpCredential",
+				where: [{ field: "ski", value: ski }],
+				update,
+			});
+		},
+
+		async listCredentials(
+			entityId: string,
+			status?: string,
+		): Promise<DpCredentialRow[]> {
+			const where: { field: string; value: string }[] = [
+				{ field: "entityId", value: entityId },
+			];
+			if (status) {
+				where.push({ field: "status", value: status });
+			}
+			return adapter.findMany<DpCredentialRow>({
+				model: "dpCredential",
+				where,
+			});
+		},
+
+		async releaseNameBySki(
+			entityId: string,
+			credentialSki: string,
+		): Promise<void> {
+			const rows = await adapter.findMany<DpNameOccupancyRow>({
+				model: "dpNameOccupancy",
+				where: [
+					{ field: "entityId", value: entityId },
+					{ field: "credentialSki", value: credentialSki },
+				],
+			});
+			for (const row of rows) {
+				await adapter.delete({
+					model: "dpNameOccupancy",
+					where: [{ field: "id", value: row.id }],
+				});
+			}
+		},
+
 		async createEnrollRequest(input: {
 			entityId: string;
 			host?: string | null;

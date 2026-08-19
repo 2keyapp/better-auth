@@ -9,8 +9,9 @@ export type DelegatePermissionsOptions = {
 	 */
 	serviceId?: string | undefined;
 	/**
-	 * Seed catalog when empty. Pass `"demo"` for the built-in example seed,
-	 * or a custom CatalogSeed (tenant-specific actions/profiles).
+	 * Seed catalog when empty. Pass `"demo"` for the built-in example seed
+	 * (includes a **demo** Platform CA so `GET /platform-root` works locally).
+	 * Production tenants pass a CatalogSeed and their own `platformCa`.
 	 */
 	seed?: "demo" | CatalogSeed | undefined;
 	/**
@@ -26,11 +27,31 @@ export type DelegatePermissionsOptions = {
 	/**
 	 * Allow the server to generate Entity Root / subject keypairs during kickstart
 	 * (returns private JWKs once). Prefer client-held keys in production.
+	 * Also permits an ephemeral Platform CA when `platformCa` / `cosign` are omitted.
 	 * @default false
 	 */
 	allowServerKeygen?: boolean | undefined;
 	/**
-	 * Optional platform co-sign provider (root + machine).
+	 * Stable Platform CA material. HAProxy `ca-file` is `rootPem` (or the PEM
+	 * from `GET /delegate-permissions/platform-root`). Required in production.
+	 * `seed: "demo"` falls back to the built-in demo Platform CA when this is omitted.
+	 */
+	platformCa?:
+		| {
+				privateJwk: Record<string, unknown>;
+				/** Persist this PEM so HAProxy's trust file is byte-stable. */
+				rootPem?: string;
+				commonName?: string;
+		  }
+		| undefined;
+	/**
+	 * Mint a throwaway Platform CA when `platformCa` and `cosign` are omitted.
+	 * Defaults to `allowServerKeygen`. Must be false in production.
+	 */
+	allowEphemeralPlatformCa?: boolean | undefined;
+	/**
+	 * Optional platform co-sign provider (root + machine). When omitted, the
+	 * plugin uses `platformCa` (or an ephemeral CA if allowed).
 	 */
 	cosign?: CosignProvider | undefined;
 	/**
@@ -39,7 +60,6 @@ export type DelegatePermissionsOptions = {
 	seatBinder?: SeatBinder | undefined;
 	/**
 	 * Called after successful entity kickstart when an Entity CA cert is registered.
-	 * Billing uses this to push `target_ca_roots` to Presence.
 	 */
 	onEntityKickstart?:
 		| ((info: {
@@ -132,6 +152,9 @@ export type DpCredentialRow = {
 	host: string | null;
 	seatId: string | null;
 	status: string;
+	revokedAt: Date | null;
+	revokedReason: string | null;
+	renewedBySki: string | null;
 	createdAt: Date;
 };
 
@@ -152,6 +175,15 @@ export type DpUserCredentialBindRow = {
 	isPrimary: boolean;
 	createdAt: Date;
 };
+
+export type DpRevocationReason =
+	| "decommissioned"
+	| "key_compromise"
+	| "machine_lost"
+	| "replaced"
+	| "organization_policy"
+	| "renewed"
+	| "other";
 
 /** CSR inbox kinds — machines + zone/interim admin (server-stored pending CSR). */
 export type DpEnrollKind =

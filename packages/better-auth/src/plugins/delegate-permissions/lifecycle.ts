@@ -1,0 +1,382 @@
+import { createAuthEndpoint } from "@better-auth/core/api";
+import * as z from "zod";
+import { APIError, sessionMiddleware } from "../../api";
+import { getDelegatePermissionsAdapter } from "./adapter";
+import { assertSubset } from "./capability/subset";
+import type { Catalog } from "./capability/types";
+import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
+import { machineNameKey, parseMachineHost } from "./names";
+import { bindCsrToPublicJwk, leafMatchesCsr } from "./pki/csr";
+import type {
+	CapabilityCredential,
+	CosignProvider,
+	PublicJwk,
+} from "./pki/types";
+import type { CatalogSeed } from "./seeds";
+
+const revocationReasonSchema = z.enum([
+	"decommissioned",
+	"key_compromise",
+	"machine_lost",
+	"replaced",
+	"organization_policy",
+	"renewed",
+	"other",
+]);
+
+export function createLifecycleEndpoints(opts: {
+	serviceId: string;
+	configuredSeed: CatalogSeed | null;
+	resolveCosign: () => Promise<CosignProvider>;
+	seatBinder?: { release?(seatId: string): Promise<void> };
+}) {
+	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
+		getDelegatePermissionsAdapter(adapter, opts.serviceId);
+
+	async function ensureCatalog(
+		dp: ReturnType<typeof getDelegatePermissionsAdapter>,
+	): Promise<Catalog> {
+		let catalog = await dp.loadCatalog();
+		if (!catalog && opts.configuredSeed) {
+			catalog = await dp.seedCatalog(opts.configuredSeed);
+		}
+		if (!catalog) {
+			throw APIError.from(
+				"BAD_REQUEST",
+				DELEGATE_PERMISSIONS_ERROR_CODES.CATALOG_NOT_SEEDED,
+			);
+		}
+		return catalog;
+	}
+
+	return {
+		dpCredentialRevoke: createAuthEndpoint(
+			"/delegate-permissions/credential-revoke",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					ski: z.string().min(1),
+					reason: revocationReasonSchema.default("other"),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Revoke a credential by SKI. The certificate remains cryptographically valid but the server marks it revoked.",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const cred = await dp.getCredential(ctx.body.ski);
+				if (!cred) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_NOT_FOUND,
+					);
+				}
+				if (cred.status === "revoked") {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_ALREADY_REVOKED,
+					);
+				}
+				const now = new Date();
+				await dp.updateCredentialStatus(ctx.body.ski, {
+					status: "revoked",
+					revokedAt: now,
+					revokedReason: ctx.body.reason,
+				});
+				return {
+					ski: ctx.body.ski,
+					status: "revoked" as const,
+					reason: ctx.body.reason,
+					revokedAt: now.toISOString(),
+				};
+			},
+		),
+
+		dpCredentialStatus: createAuthEndpoint(
+			"/delegate-permissions/credential-status",
+			{
+				method: "GET",
+				query: z.object({
+					ski: z.string().min(1),
+				}),
+				metadata: {
+					openapi: {
+						description: "Check credential status by SKI",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const cred = await dp.getCredential(ctx.query.ski);
+				if (!cred) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_NOT_FOUND,
+					);
+				}
+				return {
+					ski: cred.ski,
+					entityId: cred.entityId,
+					kind: cred.kind,
+					status: cred.status,
+					host: cred.host,
+					zone: cred.zone,
+					revokedAt: cred.revokedAt?.toISOString() ?? null,
+					revokedReason: cred.revokedReason ?? null,
+					renewedBySki: cred.renewedBySki ?? null,
+					createdAt: cred.createdAt.toISOString(),
+				};
+			},
+		),
+
+		dpCredentialList: createAuthEndpoint(
+			"/delegate-permissions/credential-list",
+			{
+				method: "GET",
+				use: [sessionMiddleware],
+				query: z.object({
+					entityId: z.string().min(1),
+					status: z.string().optional(),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"List credentials for an entity, optionally filtered by status",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const rows = await dp.listCredentials(
+					ctx.query.entityId.toLowerCase(),
+					ctx.query.status,
+				);
+				return {
+					credentials: rows.map((c) => ({
+						ski: c.ski,
+						entityId: c.entityId,
+						kind: c.kind,
+						status: c.status,
+						host: c.host,
+						zone: c.zone,
+						seatId: c.seatId,
+						revokedAt: c.revokedAt?.toISOString() ?? null,
+						revokedReason: c.revokedReason ?? null,
+						renewedBySki: c.renewedBySki ?? null,
+						createdAt: c.createdAt.toISOString(),
+					})),
+				};
+			},
+		),
+
+		dpMachineDecommission: createAuthEndpoint(
+			"/delegate-permissions/machine-decommission",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					ski: z.string().min(1),
+					reason: revocationReasonSchema.default("decommissioned"),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Decommission a machine: revoke credential, release name occupancy, optionally release seat",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const cred = await dp.getCredential(ctx.body.ski);
+				if (!cred) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_NOT_FOUND,
+					);
+				}
+				if (cred.status === "revoked" || cred.status === "decommissioned") {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_ALREADY_REVOKED,
+					);
+				}
+				const now = new Date();
+				await dp.updateCredentialStatus(ctx.body.ski, {
+					status: "decommissioned",
+					revokedAt: now,
+					revokedReason: ctx.body.reason,
+				});
+				await dp.releaseNameBySki(cred.entityId, ctx.body.ski);
+
+				if (cred.seatId && opts.seatBinder?.release) {
+					try {
+						await opts.seatBinder.release(cred.seatId);
+					} catch {
+						// seat release is best-effort
+					}
+				}
+
+				return {
+					ski: ctx.body.ski,
+					entityId: cred.entityId,
+					status: "decommissioned" as const,
+					reason: ctx.body.reason,
+					revokedAt: now.toISOString(),
+				};
+			},
+		),
+
+		dpMachineRenew: createAuthEndpoint(
+			"/delegate-permissions/machine-renew",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					ski: z.string().min(1),
+					csrPem: z.string().min(1),
+					publicJwk: z.record(z.string(), z.unknown()).optional(),
+					leafPem: z.string().min(1),
+					chainPem: z.string().min(1),
+					credential: z.record(z.string(), z.unknown()),
+					issuerSki: z.string().min(1),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Renew a machine certificate: new key/CSR/cert, same identity. Old credential is marked renewed.",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const catalog = await ensureCatalog(dp);
+				const oldCred = await dp.getCredential(ctx.body.ski);
+				if (!oldCred) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_NOT_FOUND,
+					);
+				}
+				if (oldCred.status !== "active") {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CREDENTIAL_NOT_ACTIVE,
+					);
+				}
+
+				let bound: { ski: string; publicJwk: PublicJwk };
+				try {
+					bound = await bindCsrToPublicJwk(ctx.body.csrPem, ctx.body.publicJwk);
+				} catch {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_CSR,
+					);
+				}
+
+				if (!(await leafMatchesCsr(ctx.body.leafPem, ctx.body.csrPem))) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
+					);
+				}
+
+				const newCredential = ctx.body
+					.credential as unknown as CapabilityCredential;
+
+				if (newCredential.entityId !== oldCred.entityId) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.RENEWAL_IDENTITY_MISMATCH,
+					);
+				}
+				if (
+					newCredential.host &&
+					oldCred.host &&
+					newCredential.host !== oldCred.host
+				) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.RENEWAL_IDENTITY_MISMATCH,
+					);
+				}
+
+				const issuerRow = await dp.getCredential(ctx.body.issuerSki);
+				if (!issuerRow || issuerRow.entityId !== oldCred.entityId) {
+					throw APIError.from(
+						"FORBIDDEN",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ISSUER_UNAUTHORIZED,
+					);
+				}
+				const issuerCred =
+					issuerRow.credential as unknown as CapabilityCredential;
+				const subset = assertSubset(
+					newCredential.permissions,
+					issuerCred.permissions,
+					catalog,
+				);
+				if (!subset.ok) {
+					throw APIError.from("FORBIDDEN", {
+						message: subset.message,
+						code: subset.code,
+					});
+				}
+
+				const cosign = await opts.resolveCosign();
+				const platformCertCosign = await cosign.cosignLeafCert(
+					ctx.body.leafPem,
+					{
+						chainPem: ctx.body.chainPem,
+						subjectSki: bound.ski,
+						host: oldCred.host ?? undefined,
+					},
+				);
+
+				const cosignedCredential = await cosign.cosignMachine(
+					newCredential,
+					oldCred.seatId ?? `dev-seat-${bound.ski.slice(0, 12)}`,
+				);
+
+				await dp.createCredential({
+					credential: cosignedCredential,
+					seatId: oldCred.seatId,
+				});
+
+				const now = new Date();
+				await dp.updateCredentialStatus(ctx.body.ski, {
+					status: "renewed",
+					revokedAt: now,
+					revokedReason: "renewed",
+					renewedBySki: bound.ski,
+				});
+
+				if (oldCred.host) {
+					await dp.releaseNameBySki(oldCred.entityId, ctx.body.ski);
+					const parsed = parseMachineHost(oldCred.host, oldCred.entityId);
+					if (parsed) {
+						await dp.claimName({
+							entityId: oldCred.entityId,
+							nameKey: machineNameKey(parsed.path),
+							kind: "machine",
+							credentialSki: bound.ski,
+						});
+					}
+				}
+
+				return {
+					oldSki: ctx.body.ski,
+					newSki: bound.ski,
+					status: "renewed" as const,
+					entityId: oldCred.entityId,
+					host: oldCred.host,
+					platformCertPem: platformCertCosign.platformCertPem,
+					platformRootPem: platformCertCosign.platformRootPem,
+				};
+			},
+		),
+	};
+}

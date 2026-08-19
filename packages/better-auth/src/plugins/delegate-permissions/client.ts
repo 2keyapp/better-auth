@@ -25,6 +25,12 @@ export const delegatePermissionsClient = () => {
 			"/delegate-permissions/enroll-pull": "POST",
 			"/delegate-permissions/enroll-instant": "POST",
 			"/delegate-permissions/enroll-machine-permissions": "POST",
+			"/delegate-permissions/platform-root": "GET",
+			"/delegate-permissions/credential-revoke": "POST",
+			"/delegate-permissions/credential-status": "GET",
+			"/delegate-permissions/credential-list": "GET",
+			"/delegate-permissions/machine-decommission": "POST",
+			"/delegate-permissions/machine-renew": "POST",
 		},
 	} satisfies BetterAuthClientPlugin;
 };

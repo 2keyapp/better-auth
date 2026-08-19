@@ -27,4 +27,8 @@ export const DELEGATE_PERMISSIONS_ERROR_CODES = defineErrorCodes({
 	INVALID_CSR: "CSR is invalid or does not match subject public key",
 	CERT_MISMATCH: "Signed leaf certificate does not match enrollment CSR",
 	CA_CERT_REQUIRED: "Entity CA certificate is required",
+	CREDENTIAL_ALREADY_REVOKED: "Credential has already been revoked",
+	CREDENTIAL_NOT_ACTIVE: "Credential is not in active status",
+	RENEWAL_IDENTITY_MISMATCH:
+		"Renewal CSR identity does not match original credential",
 });
