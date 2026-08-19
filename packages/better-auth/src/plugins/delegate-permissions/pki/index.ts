@@ -8,13 +8,21 @@ export {
 	issueCredential,
 	verifyCredentialSignature,
 } from "./credential";
+export {
+	bindCsrToPublicJwk,
+	createDeviceCsr,
+	leafMatchesCsr,
+	signCsrWithCa,
+} from "./csr";
 export { generateEd25519KeyPair } from "./keys";
 export type { PlatformCaMaterial, PlatformCertIssue } from "./platform-ca";
 export {
 	createPlatformRootPem,
+	createSelfSignedCaPem,
 	generateEphemeralPlatformCa,
 	issuePlatformEndorsementCert,
 	loadPlatformCaMaterial,
+	verifyAgainstTrustAnchor,
 } from "./platform-ca";
 export type {
 	CapabilityCredential,

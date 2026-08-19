@@ -14,6 +14,7 @@ import {
 } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
 import { generateEd25519KeyPair, issueCredential } from "./pki";
+import { createSelfSignedCaPem } from "./pki/platform-ca";
 import type {
 	CapabilityCredential,
 	CosignProvider,
@@ -213,6 +214,14 @@ export function createCredentialEndpoints(opts: {
 
 				rootCredential = await cosign.cosignRoot(rootCredential);
 
+				const entityCa = await createSelfSignedCaPem(
+					rootKeys.privateJwk,
+					`Entity CA ${entityId}`,
+				);
+				const platformCaCertCosign = await cosign.cosignCaCert(
+					entityCa.rootPem,
+				);
+
 				const adminCredential = await issueCredential({
 					kind: "root_admin",
 					entityId,
@@ -229,6 +238,11 @@ export function createCredentialEndpoints(opts: {
 					package: entityPackage,
 					rootSki: rootKeys.ski,
 					ownerUserId: ctx.context.session.user.id,
+					caCertPem: entityCa.rootPem,
+					platformCaCertCosign: platformCaCertCosign as unknown as Record<
+						string,
+						unknown
+					>,
 				});
 				await dp.createCredential({ credential: rootCredential });
 				await dp.createCredential({ credential: adminCredential });
@@ -249,6 +263,8 @@ export function createCredentialEndpoints(opts: {
 					entityId,
 					package: entityPackage,
 					rootSki: rootKeys.ski,
+					caCertPem: entityCa.rootPem,
+					platformCaCertCosign,
 				});
 
 				return {
@@ -262,6 +278,10 @@ export function createCredentialEndpoints(opts: {
 						credential: adminCredential,
 						privateJwk: adminKeys.privateJwk,
 					},
+					caCertPem: entityCa.rootPem,
+					platformCaCertPem: platformCaCertCosign.platformCertPem,
+					platformRootPem: platformCaCertCosign.platformRootPem,
+					platformCaCertCosign,
 				};
 			},
 		),

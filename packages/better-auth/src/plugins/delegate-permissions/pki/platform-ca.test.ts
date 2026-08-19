@@ -1,9 +1,9 @@
 import * as x509 from "@peculiar/x509";
-import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
 	generateEphemeralPlatformCa,
 	issuePlatformEndorsementCert,
+	verifyAgainstTrustAnchor,
 } from "./platform-ca";
 
 const ED25519 = { name: "Ed25519" } as const;
@@ -13,15 +13,16 @@ async function createSelfSignedEntityCaAndLeaf(): Promise<{
 	caPem: string;
 	leafPem: string;
 }> {
-	x509.cryptoProvider.set(webcrypto as Crypto);
-	const caKeys = (await webcrypto.subtle.generateKey(ED25519, true, [
+	x509.cryptoProvider.set(globalThis.crypto);
+	const caKeys = (await globalThis.crypto.subtle.generateKey(ED25519, true, [
 		"sign",
 		"verify",
 	])) as CryptoKeyPair;
-	const deviceKeys = (await webcrypto.subtle.generateKey(ED25519, true, [
-		"sign",
-		"verify",
-	])) as CryptoKeyPair;
+	const deviceKeys = (await globalThis.crypto.subtle.generateKey(
+		ED25519,
+		true,
+		["sign", "verify"],
+	)) as CryptoKeyPair;
 
 	const notBefore = new Date();
 	const notAfter = new Date(notBefore.getTime() + 365 * DAY_MS);
@@ -90,6 +91,47 @@ describe("platform CA X.509 endorsement", () => {
 		expect(issued.platformCertPem).toContain("BEGIN CERTIFICATE");
 		expect(issued.platformRootPem).toContain("BEGIN CERTIFICATE");
 		expect(issued.platformRootPem.trim()).toBe(platform.rootPem.trim());
+	});
+
+	it("verifies the endorsement against the single Platform Root (HAProxy ca-file)", async () => {
+		const platform = await generateEphemeralPlatformCa();
+		const { caPem, leafPem } = await createSelfSignedEntityCaAndLeaf();
+		const issued = await issuePlatformEndorsementCert({
+			platform,
+			entityCertPem: leafPem,
+			kind: "leaf",
+			chainPem: caPem,
+			subjectCn: "device-ski",
+			host: "laptop--acme.com",
+		});
+
+		expect(
+			await verifyAgainstTrustAnchor(
+				issued.platformCertPem,
+				issued.platformRootPem,
+			),
+		).toBe(true);
+
+		const endorsed = new x509.X509Certificate(issued.platformCertPem);
+		const eku = endorsed.extensions.find(
+			(ext) => ext instanceof x509.ExtendedKeyUsageExtension,
+		);
+		expect(eku).toBeInstanceOf(x509.ExtendedKeyUsageExtension);
+		if (eku instanceof x509.ExtendedKeyUsageExtension) {
+			expect(eku.usages).toContain(x509.ExtendedKeyUsage.clientAuth);
+		}
+	});
+
+	it("rejects leaf endorsement without an Entity CA chain", async () => {
+		const platform = await generateEphemeralPlatformCa();
+		const { leafPem } = await createSelfSignedEntityCaAndLeaf();
+		await expect(
+			issuePlatformEndorsementCert({
+				platform,
+				entityCertPem: leafPem,
+				kind: "leaf",
+			}),
+		).rejects.toThrow(/Entity CA chain is required/);
 	});
 
 	it("issues Platform-signed Entity CA endorsement", async () => {

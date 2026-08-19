@@ -5,12 +5,12 @@
  * CA issues a Platform-signed endorsement certificate for the same public key.
  */
 import * as x509 from "@peculiar/x509";
-import { createHash, randomBytes, webcrypto } from "node:crypto";
-import { exportJWK, importJWK } from "jose";
-import type { KeyPairMaterial } from "./types";
+import { calculateJwkThumbprint, exportJWK, importJWK } from "jose";
+import type { KeyPairMaterial, PublicJwk } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ED25519 = { name: "Ed25519" } as const;
+const DEFAULT_PLATFORM_CN = "Platform CA";
 
 export type PlatformCertIssue = {
 	readonly platformCertPem: string;
@@ -25,7 +25,13 @@ export type PlatformCaMaterial = {
 };
 
 function randomSerialHex(bytes = 16): string {
-	return randomBytes(bytes).toString("hex");
+	const buf = new Uint8Array(bytes);
+	globalThis.crypto.getRandomValues(buf);
+	return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function setX509Crypto(): void {
+	x509.cryptoProvider.set(globalThis.crypto);
 }
 
 /** All PEM certificate blocks from a PEM or PEM chain. */
@@ -48,13 +54,11 @@ function issuerPemFromChain(pemOrChain: string): string {
 	return certs[certs.length - 1]!;
 }
 
-function skiFromPublicJwk(publicJwk: Record<string, unknown>): string {
-	const material = JSON.stringify({
-		kty: publicJwk.kty,
-		crv: publicJwk.crv,
-		x: publicJwk.x,
-	});
-	return createHash("sha256").update(material).digest("hex").slice(0, 32);
+async function skiFromPublicJwk(
+	publicJwk: Record<string, unknown>,
+): Promise<string> {
+	const { d: _d, ...pub } = publicJwk;
+	return calculateJwkThumbprint(pub as PublicJwk, "sha256");
 }
 
 async function importEd25519Private(
@@ -73,17 +77,21 @@ async function importEd25519Public(
 	return (await importJWK({ ...pub, alg: "EdDSA" }, "EdDSA")) as CryptoKey;
 }
 
-/** Build (or rebuild) a self-signed Platform Root CA PEM from an Ed25519 private JWK. */
-export async function createPlatformRootPem(
+/** Build a self-signed CA PEM from an Ed25519 private JWK (Platform Root or Entity CA). */
+export async function createSelfSignedCaPem(
 	privateJwk: Record<string, unknown>,
-	commonName = "IDR Platform CA",
-): Promise<{ rootPem: string; ski: string; publicJwk: Record<string, unknown> }> {
-	x509.cryptoProvider.set(webcrypto as Crypto);
+	commonName: string,
+): Promise<{
+	rootPem: string;
+	ski: string;
+	publicJwk: Record<string, unknown>;
+}> {
+	setX509Crypto();
 
 	const { d: _d, ...publicJwkRest } = privateJwk;
 	const ski =
 		(typeof privateJwk.kid === "string" && privateJwk.kid) ||
-		skiFromPublicJwk(publicJwkRest);
+		(await skiFromPublicJwk(publicJwkRest));
 	const publicJwk = { ...publicJwkRest, kid: ski, alg: "EdDSA" };
 	const privateKey = await importEd25519Private({
 		...privateJwk,
@@ -114,17 +122,29 @@ export async function createPlatformRootPem(
 	return { rootPem: cert.toString("pem"), ski, publicJwk };
 }
 
+/** Build (or rebuild) a self-signed Platform Root CA PEM from an Ed25519 private JWK. */
+export async function createPlatformRootPem(
+	privateJwk: Record<string, unknown>,
+	commonName = DEFAULT_PLATFORM_CN,
+): Promise<{
+	rootPem: string;
+	ski: string;
+	publicJwk: Record<string, unknown>;
+}> {
+	return createSelfSignedCaPem(privateJwk, commonName);
+}
+
 /** Load Platform CA from private JWK + optional stored root PEM. */
 export async function loadPlatformCaMaterial(input: {
 	privateJwk: Record<string, unknown>;
 	rootPem?: string;
 	commonName?: string;
 }): Promise<PlatformCaMaterial> {
-	x509.cryptoProvider.set(webcrypto as Crypto);
+	setX509Crypto();
 
 	const built = await createPlatformRootPem(
 		input.privateJwk,
-		input.commonName ?? "IDR Platform CA",
+		input.commonName ?? DEFAULT_PLATFORM_CN,
 	);
 	const rootPem = input.rootPem?.trim() ? input.rootPem : built.rootPem;
 	const privateKey = await importEd25519Private({
@@ -152,17 +172,17 @@ export async function loadPlatformCaMaterial(input: {
 
 /** Generate an ephemeral Platform CA (dev/test). */
 export async function generateEphemeralPlatformCa(
-	commonName = "IDR Platform CA (dev)",
+	commonName = `${DEFAULT_PLATFORM_CN} (dev)`,
 ): Promise<PlatformCaMaterial> {
-	x509.cryptoProvider.set(webcrypto as Crypto);
-	const { privateKey, publicKey } = (await webcrypto.subtle.generateKey(
+	setX509Crypto();
+	const { privateKey, publicKey } = (await globalThis.crypto.subtle.generateKey(
 		ED25519,
 		true,
 		["sign", "verify"],
 	)) as CryptoKeyPair;
 	const privateJwk = (await exportJWK(privateKey)) as Record<string, unknown>;
 	const publicJwk = (await exportJWK(publicKey)) as Record<string, unknown>;
-	const ski = skiFromPublicJwk(publicJwk);
+	const ski = await skiFromPublicJwk(publicJwk);
 	return loadPlatformCaMaterial({
 		privateJwk: { ...privateJwk, kid: ski, alg: "EdDSA" },
 		commonName,
@@ -188,7 +208,7 @@ export async function issuePlatformEndorsementCert(input: {
 	host?: string;
 	notAfterDays?: number;
 }): Promise<PlatformCertIssue> {
-	x509.cryptoProvider.set(webcrypto as Crypto);
+	setX509Crypto();
 
 	const entityCert = new x509.X509Certificate(input.entityCertPem);
 	if (input.kind === "ca") {
@@ -196,7 +216,12 @@ export async function issuePlatformEndorsementCert(input: {
 		if (!entityOk) {
 			throw new Error("Entity CA certificate signature verification failed");
 		}
-	} else if (input.chainPem?.trim()) {
+	} else {
+		if (!input.chainPem?.trim()) {
+			throw new Error(
+				"Entity CA chain is required to endorse a leaf certificate",
+			);
+		}
 		const issuerPem = issuerPemFromChain(input.chainPem);
 		const issuer = new x509.X509Certificate(issuerPem);
 		const leafOk = await entityCert.verify({ publicKey: issuer.publicKey });
@@ -277,4 +302,22 @@ export async function issuePlatformEndorsementCert(input: {
 		: `${input.platform.rootPem}\n`;
 
 	return { platformCertPem, platformRootPem };
+}
+
+/**
+ * HAProxy litmus: `platformCertPem` verifies against the single Platform Root
+ * (`ca-file` / `ca-sign-file`).
+ */
+export async function verifyAgainstTrustAnchor(
+	certPem: string,
+	rootPem: string,
+): Promise<boolean> {
+	setX509Crypto();
+	try {
+		const cert = new x509.X509Certificate(certPem);
+		const root = new x509.X509Certificate(rootPem);
+		return await cert.verify({ publicKey: root.publicKey });
+	} catch {
+		return false;
+	}
 }

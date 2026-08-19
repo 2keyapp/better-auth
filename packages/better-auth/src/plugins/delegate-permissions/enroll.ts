@@ -1,5 +1,4 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { calculateJwkThumbprint } from "jose";
 import * as z from "zod";
 import { APIError, sessionMiddleware } from "../../api";
 import { getDelegatePermissionsAdapter } from "./adapter";
@@ -10,6 +9,7 @@ import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import { machineNameKey, parseMachineHost, zoneNameKey } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
 import { issueCredential } from "./pki/credential";
+import { bindCsrToPublicJwk, leafMatchesCsr } from "./pki/csr";
 import type {
 	CapabilityCredential,
 	CosignProvider,
@@ -32,10 +32,9 @@ const enrollKindSchema = z.enum([
 	"source",
 ]);
 
-function normalizeEnrollKind(kind: z.infer<typeof enrollKindSchema>): Exclude<
-	DpEnrollKind,
-	"target" | "source"
-> {
+function normalizeEnrollKind(
+	kind: z.infer<typeof enrollKindSchema>,
+): Exclude<DpEnrollKind, "target" | "source"> {
 	if (kind === "target") return "machine_target";
 	if (kind === "source") return "machine_source";
 	return kind;
@@ -96,10 +95,27 @@ function randomPullToken(): string {
 	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function skiFromPublicJwk(
-	publicJwk: Record<string, unknown>,
-): Promise<string> {
-	return calculateJwkThumbprint(publicJwk as PublicJwk, "sha256");
+async function bindEnrollCsr(
+	csrPem: string,
+	publicJwk?: Record<string, unknown>,
+	subjectSki?: string,
+): Promise<{ ski: string; publicJwk: PublicJwk }> {
+	let bound: { ski: string; publicJwk: PublicJwk };
+	try {
+		bound = await bindCsrToPublicJwk(csrPem, publicJwk);
+	} catch {
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_CSR,
+		);
+	}
+	if (subjectSki && subjectSki !== bound.ski) {
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_CSR,
+		);
+	}
+	return bound;
 }
 
 function assertKindAllowedForPackage(
@@ -223,10 +239,7 @@ async function finalizeApprovedEnroll(opts: {
 			seatId = `dev-seat-${opts.subjectSki.slice(0, 12)}`;
 		}
 
-		const credential = await opts.cosign.cosignMachine(
-			opts.credential,
-			seatId,
-		);
+		const credential = await opts.cosign.cosignMachine(opts.credential, seatId);
 		const platformCertCosign = await opts.cosign.cosignLeafCert(opts.leafPem, {
 			chainPem: opts.chainPem,
 			subjectSki: opts.subjectSki,
@@ -322,7 +335,7 @@ export function createEnrollEndpoints(opts: {
 					kind: enrollKindSchema.optional(),
 					role: enrollKindSchema.default("machine_target"),
 					csrPem: z.string().min(1),
-					publicJwk: z.record(z.string(), z.unknown()),
+					publicJwk: z.record(z.string(), z.unknown()).optional(),
 					subjectSki: z.string().min(1).optional(),
 				}),
 				metadata: {
@@ -373,8 +386,12 @@ export function createEnrollEndpoints(opts: {
 					}
 				}
 
-				const subjectSki =
-					ctx.body.subjectSki ?? (await skiFromPublicJwk(ctx.body.publicJwk));
+				const bound = await bindEnrollCsr(
+					ctx.body.csrPem,
+					ctx.body.publicJwk,
+					ctx.body.subjectSki,
+				);
+				const subjectSki = bound.ski;
 				const pullToken = randomPullToken();
 				const row = await dp.createEnrollRequest({
 					entityId,
@@ -383,7 +400,7 @@ export function createEnrollEndpoints(opts: {
 					role: kind,
 					csrPem: ctx.body.csrPem,
 					subjectSki,
-					publicJwk: ctx.body.publicJwk,
+					publicJwk: bound.publicJwk,
 					pullToken,
 					createdByUserId: ctx.context.session?.user?.id ?? null,
 				});
@@ -475,6 +492,12 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_PENDING,
 					);
 				}
+				if (!(await leafMatchesCsr(ctx.body.leafPem, row.csrPem))) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
+					);
+				}
 				const kind = normalizeEnrollKind(
 					row.role as z.infer<typeof enrollKindSchema>,
 				);
@@ -485,8 +508,7 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
 					);
 				}
-				let credential = ctx.body
-					.credential as unknown as CapabilityCredential;
+				let credential = ctx.body.credential as unknown as CapabilityCredential;
 				if (
 					ctx.body.issuerPrivateJwk &&
 					(!credential.signature || typeof credential.signature !== "string")
@@ -689,7 +711,7 @@ export function createEnrollEndpoints(opts: {
 					kind: enrollKindSchema.optional(),
 					role: enrollKindSchema.default("machine_target"),
 					csrPem: z.string().min(1),
-					publicJwk: z.record(z.string(), z.unknown()),
+					publicJwk: z.record(z.string(), z.unknown()).optional(),
 					subjectSki: z.string().min(1).optional(),
 					leafPem: z.string().min(1),
 					chainPem: z.string().min(1),
@@ -725,8 +747,18 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
 					);
 				}
-				const subjectSki =
-					ctx.body.subjectSki ?? (await skiFromPublicJwk(ctx.body.publicJwk));
+				const bound = await bindEnrollCsr(
+					ctx.body.csrPem,
+					ctx.body.publicJwk,
+					ctx.body.subjectSki,
+				);
+				const subjectSki = bound.ski;
+				if (!(await leafMatchesCsr(ctx.body.leafPem, ctx.body.csrPem))) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
+					);
+				}
 				const cosign = await opts.resolveCosign();
 				const finalized = await finalizeApprovedEnroll({
 					dp,
@@ -736,7 +768,7 @@ export function createEnrollEndpoints(opts: {
 					host,
 					zone,
 					subjectSki,
-					publicJwk: ctx.body.publicJwk,
+					publicJwk: bound.publicJwk,
 					leafPem: ctx.body.leafPem,
 					chainPem: ctx.body.chainPem,
 					credential: ctx.body.credential as unknown as CapabilityCredential,
@@ -753,7 +785,7 @@ export function createEnrollEndpoints(opts: {
 					role: kind,
 					csrPem: ctx.body.csrPem,
 					subjectSki,
-					publicJwk: ctx.body.publicJwk,
+					publicJwk: bound.publicJwk,
 					pullToken,
 					createdByUserId: ctx.context.session.user.id,
 					status: "consumed",

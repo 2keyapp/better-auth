@@ -11,8 +11,7 @@ export const DEMO_SERVICE_ID = "demo";
 
 /**
  * Product-neutral hierarchical host catalog (ZA XOR machine naming).
- * Tenant apps (e.g. IDR) supply their own CatalogSeed — do not put product
- * actions here.
+ * Apps supply their own CatalogSeed — do not put product actions here.
  */
 const DEMO_ACTIONS: readonly ActionDef[] = [
 	{ action: "admin.invite", description: "Create interim admin identity" },
