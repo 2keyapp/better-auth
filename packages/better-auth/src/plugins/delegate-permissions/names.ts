@@ -1,3 +1,4 @@
+/* cspell:ignore FQHN */
 /**
  * Host / zone naming helpers (no role markers in the host string).
  * Machine host form: `{path}--{entityId}` (logical) or `{path}--{entityId}.idr.to` (verified FQHN).
