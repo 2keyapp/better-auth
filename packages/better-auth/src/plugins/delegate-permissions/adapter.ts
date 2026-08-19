@@ -413,7 +413,8 @@ export function getDelegatePermissionsAdapter(
 
 		async createEnrollRequest(input: {
 			entityId: string;
-			host: string;
+			host?: string | null;
+			zone?: string | null;
 			role: string;
 			csrPem: string;
 			subjectSki: string;
@@ -433,7 +434,8 @@ export function getDelegatePermissionsAdapter(
 					model: "dpEnrollRequest",
 					data: {
 						entityId: input.entityId,
-						host: input.host,
+						host: input.host ?? "",
+						zone: input.zone ?? null,
 						role: input.role,
 						csrPem: input.csrPem,
 						subjectSki: input.subjectSki,

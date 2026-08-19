@@ -7,18 +7,51 @@ import { expandProfile } from "./capability/expand";
 import { assertSubset } from "./capability/subset";
 import type { CapabilitySet, Catalog } from "./capability/types";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
-import { machineNameKey, parseMachineHost } from "./names";
+import { machineNameKey, parseMachineHost, zoneNameKey } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
+import { issueCredential } from "./pki/credential";
 import type {
 	CapabilityCredential,
 	CosignProvider,
+	EntityPackage,
 	KeyPairMaterial,
 	PublicJwk,
 	SeatBinder,
 } from "./pki/types";
 import type { CatalogSeed } from "./seeds";
+import type { DpEnrollKind } from "./types";
 
 type DpAdapter = ReturnType<typeof getDelegatePermissionsAdapter>;
+
+const enrollKindSchema = z.enum([
+	"machine_target",
+	"machine_source",
+	"zone_authority",
+	"interim_admin",
+	"target",
+	"source",
+]);
+
+function normalizeEnrollKind(kind: z.infer<typeof enrollKindSchema>): Exclude<
+	DpEnrollKind,
+	"target" | "source"
+> {
+	if (kind === "target") return "machine_target";
+	if (kind === "source") return "machine_source";
+	return kind;
+}
+
+function isMachineKind(
+	kind: ReturnType<typeof normalizeEnrollKind>,
+): kind is "machine_target" | "machine_source" {
+	return kind === "machine_target" || kind === "machine_source";
+}
+
+function deviceSeatRole(
+	kind: "machine_target" | "machine_source",
+): "target" | "source" {
+	return kind === "machine_source" ? "source" : "target";
+}
 
 function withEntityScope(
 	permissions: CapabilitySet,
@@ -69,12 +102,35 @@ async function skiFromPublicJwk(
 	return calculateJwkThumbprint(publicJwk as PublicJwk, "sha256");
 }
 
+function assertKindAllowedForPackage(
+	pkg: string | null | undefined,
+	kind: ReturnType<typeof normalizeEnrollKind>,
+): void {
+	if (pkg === "personal" && !isMachineKind(kind)) {
+		throw APIError.from(
+			"FORBIDDEN",
+			DELEGATE_PERMISSIONS_ERROR_CODES.PACKAGE_FORBIDDEN,
+		);
+	}
+	// Service-provider Targets: anonymous Sources only — no source enroll.
+	if (
+		(pkg === "service_provider" || pkg === "sp") &&
+		kind === "machine_source"
+	) {
+		throw APIError.from(
+			"FORBIDDEN",
+			DELEGATE_PERMISSIONS_ERROR_CODES.PACKAGE_FORBIDDEN,
+		);
+	}
+}
+
 async function finalizeApprovedEnroll(opts: {
 	dp: DpAdapter;
 	catalog: Catalog;
 	entityId: string;
+	kind: ReturnType<typeof normalizeEnrollKind>;
 	host: string;
-	role: "target" | "source";
+	zone: string | null;
 	subjectSki: string;
 	publicJwk: Record<string, unknown>;
 	leafPem: string;
@@ -117,33 +173,34 @@ async function finalizeApprovedEnroll(opts: {
 			DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
 		);
 	}
-	if (opts.credential.host && opts.credential.host !== opts.host) {
-		throw APIError.from(
-			"BAD_REQUEST",
-			DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
-		);
-	}
 
-	const parsed = parseMachineHost(opts.host, opts.entityId);
-	if (!parsed) {
-		throw APIError.from(
-			"BAD_REQUEST",
-			DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
-		);
-	}
-	const nameKey = machineNameKey(parsed.path);
-	const occupied = await opts.dp.getNameOccupancy(opts.entityId, nameKey);
-	if (occupied) {
-		throw APIError.from(
-			"CONFLICT",
-			occupied.kind === "za"
-				? DELEGATE_PERMISSIONS_ERROR_CODES.NAME_CONFLICT
-				: DELEGATE_PERMISSIONS_ERROR_CODES.NAME_OCCUPIED,
-		);
-	}
+	if (isMachineKind(opts.kind)) {
+		if (opts.credential.host && opts.credential.host !== opts.host) {
+			throw APIError.from(
+				"BAD_REQUEST",
+				DELEGATE_PERMISSIONS_ERROR_CODES.CERT_MISMATCH,
+			);
+		}
+		const parsed = parseMachineHost(opts.host, opts.entityId);
+		if (!parsed) {
+			throw APIError.from(
+				"BAD_REQUEST",
+				DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+			);
+		}
+		const nameKey = machineNameKey(parsed.path);
+		const occupied = await opts.dp.getNameOccupancy(opts.entityId, nameKey);
+		if (occupied) {
+			throw APIError.from(
+				"CONFLICT",
+				occupied.kind === "za"
+					? DELEGATE_PERMISSIONS_ERROR_CODES.NAME_CONFLICT
+					: DELEGATE_PERMISSIONS_ERROR_CODES.NAME_OCCUPIED,
+			);
+		}
 
-	let seatId: string | undefined;
-	if (opts.role === "target") {
+		const seatRole = deviceSeatRole(opts.kind);
+		let seatId: string | undefined;
 		if (opts.seatBinder) {
 			try {
 				const seat = await opts.seatBinder.allocateAndBind({
@@ -151,9 +208,12 @@ async function finalizeApprovedEnroll(opts: {
 					host: opts.host,
 					machineSki: opts.subjectSki,
 					payingPartyId: opts.payingPartyId,
+					role: seatRole,
 				});
 				seatId = seat.seatId;
-			} catch {
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error("[delegate-permissions] seatBinder failed:", message);
 				throw APIError.from(
 					"BAD_REQUEST",
 					DELEGATE_PERMISSIONS_ERROR_CODES.SEAT_BIND_FAILED,
@@ -162,28 +222,80 @@ async function finalizeApprovedEnroll(opts: {
 		} else {
 			seatId = `dev-seat-${opts.subjectSki.slice(0, 12)}`;
 		}
+
+		const credential = await opts.cosign.cosignMachine(
+			opts.credential,
+			seatId,
+		);
+		const platformCertCosign = await opts.cosign.cosignLeafCert(opts.leafPem, {
+			chainPem: opts.chainPem,
+			subjectSki: opts.subjectSki,
+			host: opts.host,
+		});
+
+		await opts.dp.claimName({
+			entityId: opts.entityId,
+			nameKey,
+			kind: "machine",
+			credentialSki: opts.subjectSki,
+		});
+		await opts.dp.createCredential({ credential, seatId });
+
+		return {
+			credential,
+			leafPem: opts.leafPem,
+			chainPem: opts.chainPem,
+			platformCertCosign,
+			seatId,
+		};
 	}
 
-	const credential = await opts.cosign.cosignMachine(
-		opts.credential,
-		seatId ?? `source-${opts.subjectSki.slice(0, 12)}`,
-	);
-	const platformCertCosign = await opts.cosign.cosignLeafCert(opts.leafPem);
+	// Zone authority / interim admin — no device seat.
+	if (opts.kind === "zone_authority") {
+		const zone = zoneNameKey(opts.zone ?? opts.credential.zone ?? "");
+		if (!zone) {
+			throw APIError.from("BAD_REQUEST", {
+				message: "zone is required for zone_authority enroll",
+				code: "ZONE_REQUIRED",
+			});
+		}
+		const occupied = await opts.dp.getNameOccupancy(opts.entityId, zone);
+		if (occupied) {
+			throw APIError.from(
+				"CONFLICT",
+				DELEGATE_PERMISSIONS_ERROR_CODES.NAME_OCCUPIED,
+			);
+		}
+		const platformCertCosign = await opts.cosign.cosignLeafCert(opts.leafPem, {
+			chainPem: opts.chainPem,
+			subjectSki: opts.subjectSki,
+		});
+		await opts.dp.createCredential({ credential: opts.credential });
+		await opts.dp.claimName({
+			entityId: opts.entityId,
+			nameKey: zone,
+			kind: "za",
+			credentialSki: opts.subjectSki,
+		});
+		return {
+			credential: opts.credential,
+			leafPem: opts.leafPem,
+			chainPem: opts.chainPem,
+			platformCertCosign,
+		};
+	}
 
-	await opts.dp.claimName({
-		entityId: opts.entityId,
-		nameKey,
-		kind: "machine",
-		credentialSki: opts.subjectSki,
+	// interim_admin
+	const platformCertCosign = await opts.cosign.cosignLeafCert(opts.leafPem, {
+		chainPem: opts.chainPem,
+		subjectSki: opts.subjectSki,
 	});
-	await opts.dp.createCredential({ credential, seatId });
-
+	await opts.dp.createCredential({ credential: opts.credential });
 	return {
-		credential,
+		credential: opts.credential,
 		leafPem: opts.leafPem,
 		chainPem: opts.chainPem,
 		platformCertCosign,
-		seatId,
 	};
 }
 
@@ -205,8 +317,10 @@ export function createEnrollEndpoints(opts: {
 				method: "POST",
 				body: z.object({
 					entityId: z.string().min(1),
-					host: z.string().min(1),
-					role: z.enum(["target", "source"]).default("target"),
+					host: z.string().optional(),
+					zone: z.string().optional(),
+					kind: enrollKindSchema.optional(),
+					role: enrollKindSchema.default("machine_target"),
 					csrPem: z.string().min(1),
 					publicJwk: z.record(z.string(), z.unknown()),
 					subjectSki: z.string().min(1).optional(),
@@ -214,7 +328,7 @@ export function createEnrollEndpoints(opts: {
 				metadata: {
 					openapi: {
 						description:
-							"Create a pending machine enrollment from an on-device PKCS#10 CSR",
+							"Create a pending enrollment CSR (machine, zone authority, or interim admin)",
 					},
 				},
 			},
@@ -229,21 +343,44 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
 					);
 				}
-				const host = ctx.body.host.toLowerCase();
-				const parsed = parseMachineHost(host, entityId);
-				if (!parsed) {
-					throw APIError.from(
-						"BAD_REQUEST",
-						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
-					);
+				const kind = normalizeEnrollKind(ctx.body.kind ?? ctx.body.role);
+				assertKindAllowedForPackage(entity.package, kind);
+
+				let host = "";
+				let zone: string | null = null;
+				if (isMachineKind(kind)) {
+					if (!ctx.body.host) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+						);
+					}
+					host = ctx.body.host.toLowerCase();
+					const parsed = parseMachineHost(host, entityId);
+					if (!parsed) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+						);
+					}
+				} else if (kind === "zone_authority") {
+					zone = zoneNameKey(ctx.body.zone ?? "");
+					if (!zone) {
+						throw APIError.from("BAD_REQUEST", {
+							message: "zone is required for zone_authority",
+							code: "ZONE_REQUIRED",
+						});
+					}
 				}
+
 				const subjectSki =
 					ctx.body.subjectSki ?? (await skiFromPublicJwk(ctx.body.publicJwk));
 				const pullToken = randomPullToken();
 				const row = await dp.createEnrollRequest({
 					entityId,
 					host,
-					role: ctx.body.role,
+					zone,
+					role: kind,
 					csrPem: ctx.body.csrPem,
 					subjectSki,
 					publicJwk: ctx.body.publicJwk,
@@ -254,6 +391,7 @@ export function createEnrollEndpoints(opts: {
 					enrollId: row.id,
 					pullToken: row.pullToken,
 					subjectSki,
+					kind,
 					status: "pending" as const,
 				};
 			},
@@ -284,11 +422,16 @@ export function createEnrollEndpoints(opts: {
 				return {
 					enrollments: rows.map((r) => ({
 						enrollId: r.id,
-						host: r.host,
+						host: r.host || null,
+						zone: r.zone,
+						kind: r.role,
 						role: r.role,
 						subjectSki: r.subjectSki,
 						status: r.status,
 						createdAt: r.createdAt,
+						csrPem: r.csrPem,
+						publicJwk: r.publicJwk,
+						entityId: r.entityId,
 					})),
 				};
 			},
@@ -305,6 +448,8 @@ export function createEnrollEndpoints(opts: {
 					chainPem: z.string().min(1),
 					credential: z.record(z.string(), z.unknown()),
 					issuerSki: z.string().min(1),
+					/** When set, server issues a signed machine credential from the enroll row. */
+					issuerPrivateJwk: z.record(z.string(), z.unknown()).optional(),
 					payingPartyId: z.string().optional(),
 				}),
 				metadata: {
@@ -330,18 +475,71 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_PENDING,
 					);
 				}
+				const kind = normalizeEnrollKind(
+					row.role as z.infer<typeof enrollKindSchema>,
+				);
+				const entity = await dp.getEntity(row.entityId);
+				if (!entity) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
+					);
+				}
+				let credential = ctx.body
+					.credential as unknown as CapabilityCredential;
+				if (
+					ctx.body.issuerPrivateJwk &&
+					(!credential.signature || typeof credential.signature !== "string")
+				) {
+					const profiles = await dp.loadProfiles();
+					const nameKey = isMachineKind(kind)
+						? machineNameKey(
+								parseMachineHost(row.host, row.entityId)?.path ?? "",
+							)
+						: "";
+					const permissions =
+						(credential.permissions as CapabilitySet | undefined) ??
+						(isMachineKind(kind)
+							? withNameScope(
+									withEntityScope(
+										expandProfile("machine", profiles, catalog),
+										row.entityId,
+									),
+									nameKey,
+								)
+							: withEntityScope(
+									expandProfile("interim_admin", profiles, catalog),
+									row.entityId,
+								));
+					credential = await issueCredential({
+						kind: isMachineKind(kind) ? "machine" : "interim_admin",
+						entityId: row.entityId,
+						subject: {
+							ski: row.subjectSki,
+							publicJwk: row.publicJwk as PublicJwk,
+							privateJwk: {},
+						},
+						permissions,
+						issuerSki: ctx.body.issuerSki,
+						issuerPrivateJwk: ctx.body.issuerPrivateJwk,
+						host: row.host || undefined,
+						zone: row.zone || undefined,
+						package: entity.package as EntityPackage,
+					});
+				}
 				const cosign = await opts.resolveCosign();
 				const finalized = await finalizeApprovedEnroll({
 					dp,
 					catalog,
 					entityId: row.entityId,
+					kind,
 					host: row.host,
-					role: row.role as "target" | "source",
+					zone: row.zone,
 					subjectSki: row.subjectSki,
 					publicJwk: row.publicJwk,
 					leafPem: ctx.body.leafPem,
 					chainPem: ctx.body.chainPem,
-					credential: ctx.body.credential as unknown as CapabilityCredential,
+					credential,
 					issuerSki: ctx.body.issuerSki,
 					payingPartyId: ctx.body.payingPartyId,
 					cosign,
@@ -365,7 +563,10 @@ export function createEnrollEndpoints(opts: {
 					enrollId: row.id,
 					status: "approved" as const,
 					pullToken: row.pullToken,
+					kind,
 					seatId: finalized.seatId,
+					platformCertPem: finalized.platformCertCosign.platformCertPem,
+					platformRootPem: finalized.platformCertCosign.platformRootPem,
 					platformCertCosign: finalized.platformCertCosign,
 				};
 			},
@@ -432,32 +633,43 @@ export function createEnrollEndpoints(opts: {
 				if (row.status === "rejected") {
 					return { status: "rejected" as const, enrollId: row.id };
 				}
-				if (row.status === "consumed") {
-					throw APIError.from(
-						"BAD_REQUEST",
-						DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_READY,
-					);
+				// Idempotent: already-pulled enrolls still return materials (app restart / refresh).
+				if (row.status === "consumed" || row.status === "approved") {
+					if (!row.leafPem || !row.chainPem || !row.credential) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_READY,
+						);
+					}
+					if (row.status === "approved") {
+						await dp.updateEnrollRequest(row.id, { status: "consumed" });
+					}
+					return {
+						status: "approved" as const,
+						enrollId: row.id,
+						host: row.host || null,
+						zone: row.zone,
+						kind: row.role,
+						role: row.role,
+						ski: row.subjectSki,
+						publicJwk: row.publicJwk,
+						certPem: row.leafPem,
+						chainPem: row.chainPem,
+						credential: row.credential,
+						platformCertPem:
+							(row.platformCertCosign as { platformCertPem?: string } | null)
+								?.platformCertPem ?? null,
+						platformRootPem:
+							(row.platformCertCosign as { platformRootPem?: string } | null)
+								?.platformRootPem ?? null,
+						platformCertCosign: row.platformCertCosign,
+						seatId: row.seatId,
+					};
 				}
-				if (!row.leafPem || !row.chainPem || !row.credential) {
-					throw APIError.from(
-						"BAD_REQUEST",
-						DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_READY,
-					);
-				}
-				await dp.updateEnrollRequest(row.id, { status: "consumed" });
-				return {
-					status: "approved" as const,
-					enrollId: row.id,
-					host: row.host,
-					role: row.role,
-					ski: row.subjectSki,
-					publicJwk: row.publicJwk,
-					certPem: row.leafPem,
-					chainPem: row.chainPem,
-					credential: row.credential,
-					platformCertCosign: row.platformCertCosign,
-					seatId: row.seatId,
-				};
+				throw APIError.from(
+					"BAD_REQUEST",
+					DELEGATE_PERMISSIONS_ERROR_CODES.ENROLL_NOT_READY,
+				);
 			},
 		),
 
@@ -472,8 +684,10 @@ export function createEnrollEndpoints(opts: {
 				use: [sessionMiddleware],
 				body: z.object({
 					entityId: z.string().min(1),
-					host: z.string().min(1),
-					role: z.enum(["target", "source"]).default("target"),
+					host: z.string().optional(),
+					zone: z.string().optional(),
+					kind: enrollKindSchema.optional(),
+					role: enrollKindSchema.default("machine_target"),
 					csrPem: z.string().min(1),
 					publicJwk: z.record(z.string(), z.unknown()),
 					subjectSki: z.string().min(1).optional(),
@@ -486,7 +700,7 @@ export function createEnrollEndpoints(opts: {
 				metadata: {
 					openapi: {
 						description:
-							"Instant enroll when admin CA keys are on the same host as the machine (sign + accept in one call)",
+							"Instant enroll when admin CA keys are on the same host (sign + accept in one call)",
 					},
 				},
 			},
@@ -501,7 +715,16 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
 					);
 				}
-				const host = ctx.body.host.toLowerCase();
+				const kind = normalizeEnrollKind(ctx.body.kind ?? ctx.body.role);
+				assertKindAllowedForPackage(entity.package, kind);
+				const host = (ctx.body.host ?? "").toLowerCase();
+				const zone = ctx.body.zone ? zoneNameKey(ctx.body.zone) : null;
+				if (isMachineKind(kind) && !host) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+					);
+				}
 				const subjectSki =
 					ctx.body.subjectSki ?? (await skiFromPublicJwk(ctx.body.publicJwk));
 				const cosign = await opts.resolveCosign();
@@ -509,8 +732,9 @@ export function createEnrollEndpoints(opts: {
 					dp,
 					catalog,
 					entityId,
+					kind,
 					host,
-					role: ctx.body.role,
+					zone,
 					subjectSki,
 					publicJwk: ctx.body.publicJwk,
 					leafPem: ctx.body.leafPem,
@@ -525,7 +749,8 @@ export function createEnrollEndpoints(opts: {
 				const row = await dp.createEnrollRequest({
 					entityId,
 					host,
-					role: ctx.body.role,
+					zone,
+					role: kind,
 					csrPem: ctx.body.csrPem,
 					subjectSki,
 					publicJwk: ctx.body.publicJwk,
@@ -548,17 +773,21 @@ export function createEnrollEndpoints(opts: {
 					enrollId: row.id,
 					status: "approved" as const,
 					ski: subjectSki,
-					host,
+					host: host || null,
+					zone,
+					kind,
 					certPem: finalized.leafPem,
 					chainPem: finalized.chainPem,
 					credential: finalized.credential,
+					platformCertPem: finalized.platformCertCosign.platformCertPem,
+					platformRootPem: finalized.platformCertCosign.platformRootPem,
 					platformCertCosign: finalized.platformCertCosign,
 					seatId: finalized.seatId,
 				};
 			},
 		),
 
-		/** Build default machine permissions for a host (admin CLI helper). */
+		/** Build default permissions for enroll kind (admin CLI helper). */
 		dpEnrollMachinePermissions: createAuthEndpoint(
 			"/delegate-permissions/enroll-machine-permissions",
 			{
@@ -566,14 +795,16 @@ export function createEnrollEndpoints(opts: {
 				use: [sessionMiddleware],
 				body: z.object({
 					entityId: z.string().min(1),
-					host: z.string().min(1),
-					role: z.enum(["target", "source"]).default("target"),
+					host: z.string().optional(),
+					zone: z.string().optional(),
+					kind: enrollKindSchema.optional(),
+					role: enrollKindSchema.default("machine_target"),
 					permissions: capabilitySetSchema.optional(),
 				}),
 				metadata: {
 					openapi: {
 						description:
-							"Expand catalog machine / machine_source profile for a host (for offline credential signing)",
+							"Expand catalog profile for machine / zone / interim enroll (offline credential signing)",
 					},
 				},
 			},
@@ -581,21 +812,53 @@ export function createEnrollEndpoints(opts: {
 				const dp = dpOf(ctx.context.adapter);
 				const catalog = await ensureCatalog(dp, opts.configuredSeed);
 				const entityId = ctx.body.entityId.toLowerCase();
-				const parsed = parseMachineHost(ctx.body.host.toLowerCase(), entityId);
-				if (!parsed) {
-					throw APIError.from(
-						"BAD_REQUEST",
-						DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
-					);
-				}
-				const nameKey = machineNameKey(parsed.path);
+				const kind = normalizeEnrollKind(ctx.body.kind ?? ctx.body.role);
 				const profiles = await dp.loadProfiles();
-				const profileName =
-					ctx.body.role === "source" ? "machine_source" : "machine";
 				let permissions: CapabilitySet;
+				let nameKey = "";
+
 				if (ctx.body.permissions) {
 					permissions = parseCapabilitySet(ctx.body.permissions);
+				} else if (kind === "interim_admin") {
+					permissions = withEntityScope(
+						expandProfile("interim_admin", profiles, catalog),
+						entityId,
+					);
+				} else if (kind === "zone_authority") {
+					nameKey = zoneNameKey(ctx.body.zone ?? "");
+					if (!nameKey) {
+						throw APIError.from("BAD_REQUEST", {
+							message: "zone is required for zone_authority",
+							code: "ZONE_REQUIRED",
+						});
+					}
+					permissions = withNameScope(
+						withEntityScope(
+							expandProfile("zone_delegate", profiles, catalog),
+							entityId,
+						),
+						nameKey,
+					);
 				} else {
+					if (!ctx.body.host) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+						);
+					}
+					const parsed = parseMachineHost(
+						ctx.body.host.toLowerCase(),
+						entityId,
+					);
+					if (!parsed) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVALID_HOST,
+						);
+					}
+					nameKey = machineNameKey(parsed.path);
+					const profileName =
+						kind === "machine_source" ? "machine_source" : "machine";
 					try {
 						permissions = withNameScope(
 							withEntityScope(
@@ -614,7 +877,7 @@ export function createEnrollEndpoints(opts: {
 						);
 					}
 				}
-				return { permissions, nameKey, entityId };
+				return { permissions, nameKey, entityId, kind };
 			},
 		),
 	};

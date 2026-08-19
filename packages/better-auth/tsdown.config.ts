@@ -63,6 +63,7 @@ export default defineConfig({
 		"./src/plugins/siwe/index.ts",
 		"./src/plugins/mcp/client/index.ts",
 		"./src/plugins/mcp/client/adapters.ts",
+		"./src/plugins/delegate-permissions/index.ts",
 		"./src/test-utils/index.ts",
 	],
 	treeshake: true,

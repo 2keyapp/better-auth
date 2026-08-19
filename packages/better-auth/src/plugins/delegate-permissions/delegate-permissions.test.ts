@@ -171,6 +171,19 @@ describe("delegate-permissions plugin", async () => {
 			headers,
 		});
 
+		const missing = await client.$fetch(
+			"/delegate-permissions/entity?entityId=amazon.com",
+			{
+				method: "GET",
+				headers,
+			},
+		);
+		expect(missing.error).toBeNull();
+		expect(missing.data).toMatchObject({
+			entityId: "amazon.com",
+			exists: false,
+		});
+
 		const kick = await client.$fetch("/delegate-permissions/kickstart-entity", {
 			method: "POST",
 			body: {
@@ -180,6 +193,18 @@ describe("delegate-permissions plugin", async () => {
 			headers,
 		});
 		expect(kick.error).toBeNull();
+		const present = await client.$fetch(
+			"/delegate-permissions/entity?entityId=amazon.com",
+			{
+				method: "GET",
+				headers,
+			},
+		);
+		expect(present.data).toMatchObject({
+			entityId: "amazon.com",
+			exists: true,
+			package: "enterprise",
+		});
 		const kickData = kick.data as {
 			rootAdmin: {
 				credential: { ski: string };

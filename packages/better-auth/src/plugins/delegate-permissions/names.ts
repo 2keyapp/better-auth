@@ -1,22 +1,13 @@
 /**
  * Host / zone naming helpers (no role markers in the host string).
- * Machine host form: `{path}--{entityId}`
+ * Machine host form: `{path}--{entityId}` (logical) or `{path}--{entityId}.idr.to` (verified FQHN).
  */
 
-export function parseMachineHost(
-	host: string,
-	entityId: string,
-): { path: string } | null {
-	const canonicalHost = host.trim().toLowerCase();
-	const entity = entityId.trim().toLowerCase();
-	const suffix = `--${entity}`;
-	if (!canonicalHost.endsWith(suffix)) {
-		return null;
-	}
-	const path = canonicalHost.slice(0, -suffix.length);
-	if (!path || path.includes("--")) {
-		return null;
-	}
+const SEPARATOR = "--";
+const IDR_TO_SUFFIX = ".idr.to";
+
+function isValidHostPath(path: string): boolean {
+	if (!path || path.includes(SEPARATOR)) return false;
 	for (const label of path.split(".")) {
 		if (
 			!label ||
@@ -24,8 +15,35 @@ export function parseMachineHost(
 			label.startsWith("-") ||
 			label.endsWith("-")
 		) {
-			return null;
+			return false;
 		}
+	}
+	return true;
+}
+
+/**
+ * Parse `{path}--{entity}` for `entityId`.
+ * Accepts optional trailing `.idr.to` (verified FQHN from billing / Presence).
+ */
+export function parseMachineHost(
+	host: string,
+	entityId: string,
+): { path: string } | null {
+	let canonicalHost = host.trim().toLowerCase();
+	const entity = entityId.trim().toLowerCase();
+	if (!canonicalHost || !entity) return null;
+	if (canonicalHost.endsWith(".")) {
+		canonicalHost = canonicalHost.slice(0, -1);
+	}
+	if (canonicalHost.endsWith(IDR_TO_SUFFIX)) {
+		canonicalHost = canonicalHost.slice(0, -IDR_TO_SUFFIX.length);
+	}
+
+	const suffix = `${SEPARATOR}${entity}`;
+	if (!canonicalHost.endsWith(suffix)) return null;
+	const path = canonicalHost.slice(0, -suffix.length);
+	if (!path || path.includes(SEPARATOR) || !isValidHostPath(path)) {
+		return null;
 	}
 	return { path };
 }

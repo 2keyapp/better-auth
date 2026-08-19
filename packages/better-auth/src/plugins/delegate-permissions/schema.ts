@@ -321,7 +321,11 @@ export const schema = {
 			},
 			host: {
 				type: "string",
-				required: true,
+				required: false,
+			},
+			zone: {
+				type: "string",
+				required: false,
 			},
 			role: {
 				type: "string",

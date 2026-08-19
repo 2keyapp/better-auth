@@ -192,6 +192,8 @@ export function createCredentialEndpoints(opts: {
 						root: { credential: rootCredential },
 						rootAdmin: { credential: adminCredential },
 						caCertPem: ctx.body.caCertPem,
+						platformCaCertPem: platformCaCertCosign.platformCertPem,
+						platformRootPem: platformCaCertCosign.platformRootPem,
 						platformCaCertCosign,
 					};
 				}
@@ -260,6 +262,33 @@ export function createCredentialEndpoints(opts: {
 						credential: adminCredential,
 						privateJwk: adminKeys.privateJwk,
 					},
+				};
+			},
+		),
+
+		dpGetEntity: createAuthEndpoint(
+			"/delegate-permissions/entity",
+			{
+				method: "GET",
+				use: [sessionMiddleware],
+				query: z.object({
+					entityId: z.string().min(1),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Lookup whether a DP entity exists (Entity CA / Admin kickstart). Billing email rows are not Admin.",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const entityId = ctx.query.entityId.toLowerCase();
+				const entity = await dp.getEntity(entityId);
+				return {
+					entityId,
+					exists: entity != null,
+					package: entity?.package ?? null,
 				};
 			},
 		),

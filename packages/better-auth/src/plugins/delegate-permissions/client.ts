@@ -15,6 +15,7 @@ export const delegatePermissionsClient = () => {
 			"/delegate-permissions/authorize": "POST",
 			"/delegate-permissions/assert-subset": "POST",
 			"/delegate-permissions/kickstart-entity": "POST",
+			"/delegate-permissions/entity": "GET",
 			"/delegate-permissions/issue-delegate": "POST",
 			"/delegate-permissions/issue-machine": "POST",
 			"/delegate-permissions/enroll-create": "POST",
