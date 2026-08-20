@@ -89,6 +89,12 @@ const pluginMeta: Record<
 		icon: "Users2",
 		tagline: "Multi-tenant organizations with roles and invitations",
 	},
+	"delegate-permissions": {
+		category: "Authorization",
+		icon: "ShieldCheck",
+		tagline:
+			"Capability grants, delegated AuthZ, and machine certificate enrollment",
+	},
 	// Enterprise
 	"oidc-provider": {
 		category: "Enterprise",

@@ -6,6 +6,7 @@ export * from "./anonymous";
 export * from "./bearer";
 export * from "./captcha";
 export * from "./custom-session";
+export * from "./delegate-permissions";
 export * from "./device-authorization";
 export * from "./email-otp";
 export * from "./generic-oauth";

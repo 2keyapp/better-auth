@@ -262,9 +262,12 @@ export const createAdapterFactory =
 						newValue = newValue !== null ? Number(newValue) : null;
 					}
 				} else if (
-					config.supportsJSON === false &&
+					fieldAttributes!.type === "json" &&
 					typeof newValue === "object" &&
-					fieldAttributes!.type === "json"
+					newValue !== null &&
+					// node-pg encodes top-level JS arrays as PG arrays, not JSON —
+					// always stringify arrays (and all JSON when the dialect lacks JSON support).
+					(config.supportsJSON === false || Array.isArray(newValue))
 				) {
 					newValue = JSON.stringify(newValue);
 				} else if (
@@ -593,7 +596,8 @@ export const createAdapterFactory =
 				if (
 					fieldAttr.type === "json" &&
 					typeof value === "object" &&
-					!config.supportsJSON
+					value !== null &&
+					(!config.supportsJSON || Array.isArray(value))
 				) {
 					try {
 						const stringifiedJSON = JSON.stringify(value);

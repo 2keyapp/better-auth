@@ -16,6 +16,7 @@
     "last-login-method",
     "admin",
     "organization",
+    "delegate-permissions",
     "sso",
     "scim",
     "agent-auth",

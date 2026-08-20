@@ -30,3 +30,12 @@ PayU
 Mikro
 anthropics
 Zitadel
+Scomm
+scomm
+IDR
+OS20
+os20
+StemSketch
+stemsketch
+MnMs
+mnms
