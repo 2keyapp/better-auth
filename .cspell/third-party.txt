@@ -47,4 +47,6 @@ korthout
 dorny
 esac
 elif
+anthropics
+nextjs
 
