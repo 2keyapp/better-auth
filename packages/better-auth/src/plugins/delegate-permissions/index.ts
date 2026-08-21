@@ -10,6 +10,16 @@ import { expandProfile } from "./capability/expand";
 import { assertSubset } from "./capability/subset";
 import type { CapabilitySet, Resource } from "./capability/types";
 import { createCredentialEndpoints } from "./credentials";
+import {
+	DEFAULT_CA_CERT_EXPIRES_IN,
+	DEFAULT_CREDENTIAL_EXPIRES_IN,
+	DEFAULT_INVITE_EXPIRES_IN,
+	DEFAULT_INVITE_MAX_EXPIRES_IN,
+	DEFAULT_INVITE_MAX_USES,
+	DEFAULT_LEAF_CERT_EXPIRES_IN,
+	DEFAULT_SESSION_GRANT_EXPIRES_IN,
+	secondsToDays,
+} from "./defaults";
 import { createEnrollEndpoints } from "./enroll";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import { createLifecycleEndpoints } from "./lifecycle";
@@ -91,7 +101,10 @@ function resolveSeed(
 	return { ...seed, serviceId: seed.serviceId || serviceId };
 }
 
-function defaultTestCosign(platform: PlatformCaMaterial): CosignProvider {
+function defaultTestCosign(
+	platform: PlatformCaMaterial,
+	certExpires: { caCertExpiresIn: number; leafCertExpiresIn: number },
+): CosignProvider {
 	return {
 		async cosignRoot(credential) {
 			return attachPlatformCosign(
@@ -112,6 +125,7 @@ function defaultTestCosign(platform: PlatformCaMaterial): CosignProvider {
 				platform,
 				entityCertPem: caCertPem,
 				kind: "ca",
+				notAfterDays: secondsToDays(certExpires.caCertExpiresIn),
 			});
 		},
 		async cosignLeafCert(leafCertPem, opts) {
@@ -122,6 +136,7 @@ function defaultTestCosign(platform: PlatformCaMaterial): CosignProvider {
 				chainPem: opts?.chainPem,
 				subjectCn: opts?.subjectSki,
 				host: opts?.host,
+				notAfterDays: secondsToDays(certExpires.leafCertExpiresIn),
 			});
 		},
 	};
@@ -142,7 +157,18 @@ const resourceSchema = z.record(
  */
 export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 	const serviceId = options?.serviceId ?? "default";
-	const sessionGrantExpiresIn = options?.sessionGrantExpiresIn ?? 3600;
+	const sessionGrantExpiresIn =
+		options?.sessionGrantExpiresIn ?? DEFAULT_SESSION_GRANT_EXPIRES_IN;
+	const inviteExpiresIn = options?.inviteExpiresIn ?? DEFAULT_INVITE_EXPIRES_IN;
+	const inviteMaxExpiresIn =
+		options?.inviteMaxExpiresIn ?? DEFAULT_INVITE_MAX_EXPIRES_IN;
+	const inviteMaxUses = options?.inviteMaxUses ?? DEFAULT_INVITE_MAX_USES;
+	const credentialExpiresIn =
+		options?.credentialExpiresIn ?? DEFAULT_CREDENTIAL_EXPIRES_IN;
+	const caCertExpiresIn =
+		options?.caCertExpiresIn ?? DEFAULT_CA_CERT_EXPIRES_IN;
+	const leafCertExpiresIn =
+		options?.leafCertExpiresIn ?? DEFAULT_LEAF_CERT_EXPIRES_IN;
 	const allowClientSeed = options?.allowClientSeed ?? false;
 	const allowServerKeygen = options?.allowServerKeygen ?? false;
 	const allowEphemeralPlatformCa =
@@ -162,15 +188,24 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 			return resolvedPlatformCa;
 		}
 		if (options?.platformCa) {
-			resolvedPlatformCa = await loadPlatformCaMaterial(options.platformCa);
+			resolvedPlatformCa = await loadPlatformCaMaterial({
+				...options.platformCa,
+				notAfterDays: secondsToDays(caCertExpiresIn),
+			});
 			return resolvedPlatformCa;
 		}
 		if (demoPlatformCa) {
-			resolvedPlatformCa = await loadPlatformCaMaterial(demoPlatformCa);
+			resolvedPlatformCa = await loadPlatformCaMaterial({
+				...demoPlatformCa,
+				notAfterDays: secondsToDays(caCertExpiresIn),
+			});
 			return resolvedPlatformCa;
 		}
 		if (allowEphemeralPlatformCa) {
-			resolvedPlatformCa = await generateEphemeralPlatformCa();
+			resolvedPlatformCa = await generateEphemeralPlatformCa(
+				undefined,
+				secondsToDays(caCertExpiresIn),
+			);
 			return resolvedPlatformCa;
 		}
 		throw APIError.from(
@@ -183,7 +218,10 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		if (options?.cosign) {
 			return options.cosign;
 		}
-		return defaultTestCosign(await resolvePlatformCa());
+		return defaultTestCosign(await resolvePlatformCa(), {
+			caCertExpiresIn,
+			leafCertExpiresIn,
+		});
 	};
 
 	const credentialEndpoints = createCredentialEndpoints({
@@ -195,6 +233,8 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		getFallbackCosignKey: async () => (await resolvePlatformCa()).key,
 		resolveCosign,
 		onEntityKickstart: options?.onEntityKickstart,
+		credentialExpiresIn,
+		caCertExpiresIn,
 	});
 
 	const enrollEndpoints = createEnrollEndpoints({
@@ -203,6 +243,10 @@ export const delegatePermissions = (options?: DelegatePermissionsOptions) => {
 		cosign: options?.cosign,
 		seatBinder: options?.seatBinder,
 		resolveCosign,
+		inviteExpiresIn,
+		inviteMaxExpiresIn,
+		inviteMaxUses,
+		credentialExpiresIn,
 	});
 
 	const lifecycleEndpoints = createLifecycleEndpoints({

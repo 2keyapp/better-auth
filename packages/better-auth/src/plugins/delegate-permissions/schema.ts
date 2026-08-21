@@ -419,4 +419,56 @@ export const schema = {
 			},
 		},
 	},
+	dpEnrollInvite: {
+		fields: {
+			entityId: {
+				type: "string",
+				required: true,
+				index: true,
+			},
+			host: {
+				type: "string",
+				required: false,
+			},
+			zone: {
+				type: "string",
+				required: false,
+			},
+			role: {
+				type: "string",
+				required: true,
+			},
+			inviteToken: {
+				type: "string",
+				required: true,
+				unique: true,
+			},
+			expiresAt: {
+				type: "date",
+				required: true,
+			},
+			maxUses: {
+				type: "number",
+				required: true,
+				defaultValue: 1,
+			},
+			usedCount: {
+				type: "number",
+				required: true,
+				defaultValue: 0,
+			},
+			consumedAt: {
+				type: "date",
+				required: false,
+			},
+			createdByUserId: {
+				type: "string",
+				required: false,
+			},
+			createdAt: {
+				type: "date",
+				required: true,
+			},
+		},
+	},
 } satisfies BetterAuthPluginDBSchema;

@@ -25,6 +25,40 @@ export type DelegatePermissionsOptions = {
 	 */
 	sessionGrantExpiresIn?: number | undefined;
 	/**
+	 * Default enroll-invite lifetime in seconds when the request omits `expiresIn`.
+	 * Capped by `inviteMaxExpiresIn`.
+	 * @default 604800 (7 days)
+	 */
+	inviteExpiresIn?: number | undefined;
+	/**
+	 * Maximum enroll-invite `expiresIn` in seconds.
+	 * @default 2592000 (30 days)
+	 */
+	inviteMaxExpiresIn?: number | undefined;
+	/**
+	 * Default enroll-invite redeem cap when the request omits `maxUses`.
+	 * `0` = unlimited until expiry.
+	 * @default 1
+	 */
+	inviteMaxUses?: number | undefined;
+	/**
+	 * Capability-credential lifetime in seconds when the plugin mints
+	 * credentials (kickstart, issue-delegate, issue-machine, enroll-approve).
+	 * @default 31536000 (365 days)
+	 */
+	credentialExpiresIn?: number | undefined;
+	/**
+	 * Self-signed Entity / Platform CA certificate lifetime in seconds.
+	 * Also used as the default Platform endorsement lifetime for Entity CAs.
+	 * @default 315360000 (3650 days)
+	 */
+	caCertExpiresIn?: number | undefined;
+	/**
+	 * Platform-endorsed machine leaf certificate lifetime in seconds.
+	 * @default 31536000 (365 days)
+	 */
+	leafCertExpiresIn?: number | undefined;
+	/**
 	 * Allow the server to generate Entity Root / subject keypairs during kickstart
 	 * (returns private JWKs once). Prefer client-held keys in production.
 	 * Also permits an ephemeral Platform CA when `platformCa` / `cosign` are omitted.
@@ -195,6 +229,24 @@ export type DpEnrollKind =
 	| "target"
 	/** @deprecated use machine_source */
 	| "source";
+
+/** Push-invite: admin authorizes a device to submit a CSR for this entity. */
+export type DpEnrollInviteRow = {
+	id: string;
+	entityId: string;
+	/** Unused; machine name is chosen at enroll-create. */
+	host: string;
+	zone: string | null;
+	role: string;
+	inviteToken: string;
+	expiresAt: Date;
+	/** `0` = unlimited until expiresAt. Default 1. */
+	maxUses: number;
+	usedCount: number;
+	consumedAt: Date | null;
+	createdByUserId: string | null;
+	createdAt: Date;
+};
 
 export type DpEnrollRequestRow = {
 	id: string;

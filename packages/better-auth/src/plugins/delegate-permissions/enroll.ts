@@ -5,6 +5,12 @@ import { getDelegatePermissionsAdapter } from "./adapter";
 import { expandProfile } from "./capability/expand";
 import { assertSubset } from "./capability/subset";
 import type { CapabilitySet, Catalog } from "./capability/types";
+import {
+	DEFAULT_CREDENTIAL_EXPIRES_IN,
+	DEFAULT_INVITE_EXPIRES_IN,
+	DEFAULT_INVITE_MAX_EXPIRES_IN,
+	DEFAULT_INVITE_MAX_USES,
+} from "./defaults";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import { machineNameKey, parseMachineHost, zoneNameKey } from "./names";
 import { capabilitySetSchema, parseCapabilitySet } from "./parse";
@@ -93,6 +99,76 @@ function randomPullToken(): string {
 	const bytes = new Uint8Array(24);
 	crypto.getRandomValues(bytes);
 	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function asDate(value: Date | string): Date {
+	return value instanceof Date ? value : new Date(value);
+}
+
+function inviteTtlSeconds(
+	expiresIn: number | undefined,
+	defaultTtl: number,
+	maxTtl: number,
+): number {
+	const sec = expiresIn ?? defaultTtl;
+	if (!Number.isFinite(sec) || sec <= 0 || sec > maxTtl) {
+		throw APIError.from("BAD_REQUEST", {
+			message: `expiresIn must be between 1 and ${maxTtl} seconds`,
+			code: "INVALID_EXPIRES_IN",
+		});
+	}
+	return sec;
+}
+
+function asCount(value: unknown, fallback: number): number {
+	const n = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** `maxUses === 0` means unlimited until `expiresAt`. */
+function inviteIsExhausted(maxUses: number, usedCount: number): boolean {
+	return maxUses > 0 && usedCount >= maxUses;
+}
+
+async function requireOpenInvite(
+	dp: DpAdapter,
+	inviteToken: string,
+): Promise<{
+	id: string;
+	entityId: string;
+	role: string;
+	expiresAt: Date;
+	maxUses: number;
+}> {
+	const row = await dp.getEnrollInviteByToken(inviteToken);
+	if (!row) {
+		throw APIError.from(
+			"NOT_FOUND",
+			DELEGATE_PERMISSIONS_ERROR_CODES.INVITE_NOT_FOUND,
+		);
+	}
+	const expiresAt = asDate(row.expiresAt);
+	if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.INVITE_EXPIRED,
+		);
+	}
+	const maxUses = asCount(row.maxUses, 1);
+	const usedCount = asCount(row.usedCount, 0);
+	if (row.consumedAt || inviteIsExhausted(maxUses, usedCount)) {
+		throw APIError.from(
+			"BAD_REQUEST",
+			DELEGATE_PERMISSIONS_ERROR_CODES.INVITE_USED,
+		);
+	}
+	return {
+		id: row.id,
+		entityId: row.entityId,
+		role: row.role,
+		expiresAt,
+		maxUses,
+	};
 }
 
 async function bindEnrollCsr(
@@ -319,7 +395,20 @@ export function createEnrollEndpoints(opts: {
 	seatBinder?: SeatBinder;
 	getFallbackCosignKey?: () => Promise<KeyPairMaterial>;
 	resolveCosign: () => Promise<CosignProvider>;
+	inviteExpiresIn?: number;
+	inviteMaxExpiresIn?: number;
+	inviteMaxUses?: number;
+	credentialExpiresIn?: number;
 }) {
+	const inviteMaxExpiresIn =
+		opts.inviteMaxExpiresIn ?? DEFAULT_INVITE_MAX_EXPIRES_IN;
+	const inviteExpiresIn = Math.min(
+		opts.inviteExpiresIn ?? DEFAULT_INVITE_EXPIRES_IN,
+		inviteMaxExpiresIn,
+	);
+	const inviteMaxUses = opts.inviteMaxUses ?? DEFAULT_INVITE_MAX_USES;
+	const credentialExpiresIn =
+		opts.credentialExpiresIn ?? DEFAULT_CREDENTIAL_EXPIRES_IN;
 	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
 		getDelegatePermissionsAdapter(adapter, opts.serviceId);
 
@@ -329,7 +418,7 @@ export function createEnrollEndpoints(opts: {
 			{
 				method: "POST",
 				body: z.object({
-					entityId: z.string().min(1),
+					entityId: z.string().min(1).optional(),
 					host: z.string().optional(),
 					zone: z.string().optional(),
 					kind: enrollKindSchema.optional(),
@@ -337,18 +426,42 @@ export function createEnrollEndpoints(opts: {
 					csrPem: z.string().min(1),
 					publicJwk: z.record(z.string(), z.unknown()).optional(),
 					subjectSki: z.string().min(1).optional(),
+					inviteToken: z.string().min(1).optional(),
 				}),
 				metadata: {
 					openapi: {
 						description:
-							"Create a pending enrollment CSR (machine, zone authority, or interim admin)",
+							"Create a pending enrollment CSR (machine, zone authority, or interim admin). Optional inviteToken binds the CSR to an invited entity.",
 					},
 				},
 			},
 			async (ctx) => {
 				const dp = dpOf(ctx.context.adapter);
 				await ensureCatalog(dp, opts.configuredSeed);
-				const entityId = ctx.body.entityId.toLowerCase();
+				const invite = ctx.body.inviteToken
+					? await requireOpenInvite(dp, ctx.body.inviteToken)
+					: null;
+
+				let entityId = (
+					ctx.body.entityId ??
+					invite?.entityId ??
+					""
+				).toLowerCase();
+				if (invite) {
+					if (entityId && entityId !== invite.entityId) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVITE_MISMATCH,
+						);
+					}
+					entityId = invite.entityId;
+				}
+				if (!entityId) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
+					);
+				}
 				const entity = await dp.getEntity(entityId);
 				if (!entity) {
 					throw APIError.from(
@@ -356,6 +469,7 @@ export function createEnrollEndpoints(opts: {
 						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
 					);
 				}
+
 				const kind = normalizeEnrollKind(ctx.body.kind ?? ctx.body.role);
 				assertKindAllowedForPackage(entity.package, kind);
 
@@ -391,6 +505,15 @@ export function createEnrollEndpoints(opts: {
 					ctx.body.publicJwk,
 					ctx.body.subjectSki,
 				);
+				if (invite) {
+					const redeemed = await dp.redeemEnrollInvite(invite.id);
+					if (!redeemed) {
+						throw APIError.from(
+							"BAD_REQUEST",
+							DELEGATE_PERMISSIONS_ERROR_CODES.INVITE_USED,
+						);
+					}
+				}
 				const subjectSki = bound.ski;
 				const pullToken = randomPullToken();
 				const row = await dp.createEnrollRequest({
@@ -410,6 +533,103 @@ export function createEnrollEndpoints(opts: {
 					subjectSki,
 					kind,
 					status: "pending" as const,
+				};
+			},
+		),
+
+		dpEnrollInviteCreate: createAuthEndpoint(
+			"/delegate-permissions/enroll-invite",
+			{
+				method: "POST",
+				use: [sessionMiddleware],
+				body: z.object({
+					entityId: z.string().min(1),
+					kind: enrollKindSchema.optional(),
+					role: enrollKindSchema.optional(),
+					expiresIn: z.number().int().positive().optional(),
+					/** Redeem cap. Default from plugin `inviteMaxUses` (`1`). `0` = unlimited until expiresAt. */
+					maxUses: z.number().int().min(0).optional(),
+				}),
+				metadata: {
+					openapi: {
+						description:
+							"Create a push-invite token that authorizes a device to submit a CSR for an entity",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				await ensureCatalog(dp, opts.configuredSeed);
+				const entityId = ctx.body.entityId.toLowerCase();
+				const entity = await dp.getEntity(entityId);
+				if (!entity) {
+					throw APIError.from(
+						"NOT_FOUND",
+						DELEGATE_PERMISSIONS_ERROR_CODES.ENTITY_NOT_FOUND,
+					);
+				}
+				const kind = normalizeEnrollKind(
+					ctx.body.kind ?? ctx.body.role ?? "machine_target",
+				);
+				if (!isMachineKind(kind)) {
+					throw APIError.from("BAD_REQUEST", {
+						message:
+							"enroll invites are for machine_target or machine_source only",
+						code: "INVITE_KIND_UNSUPPORTED",
+					});
+				}
+				assertKindAllowedForPackage(entity.package, kind);
+				const maxUses = ctx.body.maxUses ?? inviteMaxUses;
+				const expiresAt = new Date(
+					Date.now() +
+						inviteTtlSeconds(
+							ctx.body.expiresIn,
+							inviteExpiresIn,
+							inviteMaxExpiresIn,
+						) *
+							1000,
+				);
+				const row = await dp.createEnrollInvite({
+					entityId,
+					role: kind,
+					inviteToken: randomPullToken(),
+					expiresAt,
+					maxUses,
+					createdByUserId: ctx.context.session.user.id,
+				});
+				return {
+					inviteId: row.id,
+					inviteToken: row.inviteToken,
+					entityId: row.entityId,
+					kind,
+					expiresAt: asDate(row.expiresAt).toISOString(),
+					maxUses,
+				};
+			},
+		),
+
+		dpEnrollInviteGet: createAuthEndpoint(
+			"/delegate-permissions/enroll-invite",
+			{
+				method: "GET",
+				query: z.object({
+					inviteToken: z.string().min(1),
+				}),
+				metadata: {
+					openapi: {
+						description: "Look up an enrollment invite without consuming it",
+					},
+				},
+			},
+			async (ctx) => {
+				const dp = dpOf(ctx.context.adapter);
+				const invite = await requireOpenInvite(dp, ctx.query.inviteToken);
+				return {
+					inviteId: invite.id,
+					entityId: invite.entityId,
+					kind: invite.role,
+					expiresAt: invite.expiresAt.toISOString(),
+					maxUses: invite.maxUses,
 				};
 			},
 		),
@@ -547,6 +767,7 @@ export function createEnrollEndpoints(opts: {
 						host: row.host || undefined,
 						zone: row.zone || undefined,
 						package: entity.package as EntityPackage,
+						ttlSeconds: credentialExpiresIn,
 					});
 				}
 				const cosign = await opts.resolveCosign();
