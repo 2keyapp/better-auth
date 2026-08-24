@@ -1,6 +1,6 @@
 /** Shared optional-option defaults for `delegatePermissions()`. */
 
-export const DAY_SEC = 24 * 60 * 60;
+const DAY_SEC = 24 * 60 * 60;
 
 export const DEFAULT_SESSION_GRANT_EXPIRES_IN = 3600;
 export const DEFAULT_INVITE_EXPIRES_IN = 7 * DAY_SEC;
