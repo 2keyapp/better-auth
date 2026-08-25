@@ -31,6 +31,9 @@ const configPath = join(__dirname, "../release-branch.config.json");
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const dryRun = process.argv.includes("--dry-run");
 
+/** Windows: `pnpm` is often a `.cmd` shim; `execFileSync("pnpm")` needs the extension. */
+const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+
 function run(cmd, args, options = {}) {
 	if (dryRun && cmd === "git" && args[0] === "push") {
 		console.log(`[dry-run] ${cmd} ${args.join(" ")}`);
@@ -40,6 +43,7 @@ function run(cmd, args, options = {}) {
 		stdio: options.capture ? "pipe" : "inherit",
 		cwd: options.cwd ?? root,
 		encoding: options.capture ? "utf8" : undefined,
+		shell: cmd.endsWith(".cmd") || cmd.endsWith(".bat"),
 	});
 }
 
@@ -74,8 +78,8 @@ function publishPackage(pkg) {
 
 	console.log(`\n==> ${pkg.filter} -> branch ${pkg.branch}`);
 
-	run("pnpm", ["--filter", `${pkg.filter}...`, "build"]);
-	run("pnpm", ["--filter", pkg.filter, "pack", "--pack-destination", packDir]);
+	run(PNPM, ["--filter", `${pkg.filter}...`, "build"]);
+	run(PNPM, ["--filter", pkg.filter, "pack", "--pack-destination", packDir]);
 
 	const tarball = readdirSync(packDir).find((file) => file.endsWith(".tgz"));
 	if (!tarball) {
