@@ -1379,6 +1379,12 @@ importers:
 
   packages/flutter:
     dependencies:
+      '@2key/auth-native':
+        specifier: workspace:*
+        version: link:../native
+
+  packages/native:
+    dependencies:
       zod:
         specifier: 4.3.6
         version: 4.3.6
