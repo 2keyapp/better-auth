@@ -11,12 +11,14 @@
       "@better-auth/core",
       "auth",
       "@better-auth/api-key",
+      "@better-auth/cimd",
       "@better-auth/drizzle-adapter",
       "@better-auth/electron",
       "@better-auth/expo",
       "@better-auth/flutter",
       "@better-auth/i18n",
       "@better-auth/kysely-adapter",
+      "@better-auth/mcp",
       "@better-auth/memory-adapter",
       "@better-auth/mongo-adapter",
       "@better-auth/oauth-provider",
@@ -36,7 +38,7 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "bumpVersionsWithWorkspaceProtocolOnly": true,
-  "ignore": [],
+  "ignore": ["@better-auth-test/adapter-base", "@better-auth-test/test-utils"],
   "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
     "onlyUpdatePeerDependentsWhenOutOfRange": true
   }

@@ -96,11 +96,6 @@ const pluginMeta: Record<
 			"Capability grants, delegated AuthZ, and machine certificate enrollment",
 	},
 	// Enterprise
-	"oidc-provider": {
-		category: "Enterprise",
-		icon: "Globe",
-		tagline: "OpenID Connect provider for federated identity",
-	},
 	"oauth-provider": {
 		category: "Enterprise",
 		icon: "Server",

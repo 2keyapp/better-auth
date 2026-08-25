@@ -50,6 +50,7 @@ const SCOPE_TO_DOMAIN: Record<string, string> = {
 	"oidc-provider": "identity",
 	mcp: "identity",
 	"device-authorization": "identity",
+	cimd: "identity",
 
 	// organization
 	organization: "organization",
@@ -101,6 +102,7 @@ const PATH_TO_DOMAIN: [string, string][] = [
 	["packages/better-auth/src/plugins/oidc-provider/", "identity"],
 	["packages/better-auth/src/plugins/mcp/", "identity"],
 	["packages/better-auth/src/plugins/device-authorization/", "identity"],
+	["packages/cimd/", "identity"],
 	["packages/better-auth/src/plugins/magic-link/", "credentials"],
 	["packages/better-auth/src/plugins/email-otp/", "credentials"],
 	["packages/better-auth/src/plugins/phone-number/", "credentials"],
@@ -254,6 +256,7 @@ export const FILTERED_DOMAINS = new Set(["docs", "devops"]);
  * Used by release-notes.ts to group entries by the package users install.
  */
 const SCOPE_TO_PACKAGE: Record<string, string> = {
+	cimd: "@better-auth/cimd",
 	sso: "@better-auth/sso",
 	scim: "@better-auth/scim",
 	passkey: "@better-auth/passkey",
@@ -279,6 +282,7 @@ const SCOPE_TO_PACKAGE: Record<string, string> = {
  * Order matters: more specific paths must come before catch-alls.
  */
 const PATH_TO_PACKAGE: [string, string][] = [
+	["packages/cimd/", "@better-auth/cimd"],
 	["packages/sso/", "@better-auth/sso"],
 	["packages/scim/", "@better-auth/scim"],
 	["packages/passkey/", "@better-auth/passkey"],

@@ -1,10 +1,12 @@
 # Better Auth SCIM Plugin
 
-SCIM (System for Cross-domain Identity Management) plugin for [Better Auth](https://www.better-auth.com) — enable enterprise user provisioning.
+`@better-auth/scim` adds an inbound System for Cross-domain Identity Management (SCIM) 2.0 service to [Better Auth](https://www.better-auth.com). Directory services can provision isolated Users, Groups, and direct Group memberships through bearer-authenticated connections.
+
+The plugin supports a focused subset of the resource model in [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643) and the protocol in [RFC 7644](https://www.rfc-editor.org/rfc/rfc7644).
 
 ## Installation
 
-Install from GitHub release branches (not npm):
+This fork publishes packaged builds on GitHub release branches (not npm):
 
 ```json
 {
@@ -20,11 +22,17 @@ Install from GitHub release branches (not npm):
 | `better-auth` | `release` |
 | `@better-auth/scim` | `release-scim` |
 
-See the [Install from GitHub](https://www.better-auth.com/docs/guides/github-installation) guide for details.
+See the [Install from GitHub](/docs/guides/github-installation) guide for details.
+
+Upstream consumers can still install from npm when available:
+
+```bash
+pnpm add @better-auth/scim
+```
 
 ## Documentation
 
-For full documentation, visit [better-auth.com/docs/plugins/scim](https://www.better-auth.com/docs/plugins/scim).
+For setup, Groups and custom roles, and the protocol reference, visit [better-auth.com/docs/plugins/scim](https://www.better-auth.com/docs/plugins/scim).
 
 ## License
 

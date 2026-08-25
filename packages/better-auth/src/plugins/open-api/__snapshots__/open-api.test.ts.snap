@@ -27,6 +27,9 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
           "idToken": {
             "type": "string",
           },
+          "issuer": {
+            "type": "string",
+          },
           "password": {
             "type": "string",
           },
@@ -53,6 +56,7 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
         },
         "required": [
           "id",
+          "issuer",
           "accountId",
           "providerId",
           "userId",
@@ -371,6 +375,30 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "account": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                        },
+                        "id": {
+                          "type": "string",
+                        },
+                        "issuer": {
+                          "type": "string",
+                        },
+                        "providerId": {
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "id",
+                        "providerId",
+                        "issuer",
+                        "accountId",
+                      ],
+                      "type": "object",
+                    },
                     "data": {
                       "additionalProperties": true,
                       "properties": {},
@@ -379,13 +407,11 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                     "user": {
                       "properties": {
                         "email": {
+                          "nullable": true,
                           "type": "string",
                         },
                         "emailVerified": {
                           "type": "boolean",
-                        },
-                        "id": {
-                          "type": "string",
                         },
                         "image": {
                           "type": "string",
@@ -395,7 +421,6 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                         },
                       },
                       "required": [
-                        "id",
                         "emailVerified",
                       ],
                       "type": "object",
@@ -404,6 +429,7 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                   "required": [
                     "user",
                     "data",
+                    "account",
                   ],
                   "type": "object",
                 },
@@ -667,6 +693,9 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                     "type": "string",
                   },
                   "error_description": {
+                    "type": "string",
+                  },
+                  "iss": {
                     "type": "string",
                   },
                   "state": {
@@ -1619,24 +1648,42 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "accountId": {
-                    "description": "The account ID associated with the refresh token",
-                    "type": "string",
+                "anyOf": [
+                  {
+                    "properties": {
+                      "accountId": {
+                        "description": "The Better Auth account ID",
+                        "type": "string",
+                      },
+                      "userId": {
+                        "description": "The user ID associated with the account",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "accountId",
+                    ],
+                    "type": "object",
                   },
-                  "providerId": {
-                    "description": "The provider ID for the OAuth provider",
-                    "type": "string",
+                  {
+                    "properties": {
+                      "useAccountCookie": {
+                        "description": "Select the current OAuth account from its signed cookie",
+                        "enum": [
+                          true,
+                        ],
+                      },
+                      "userId": {
+                        "description": "The user ID associated with the account",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "useAccountCookie",
+                    ],
+                    "type": "object",
                   },
-                  "userId": {
-                    "description": "The user ID associated with the account",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "providerId",
                 ],
-                "type": "object",
               },
             },
           },
@@ -2061,6 +2108,16 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                     },
                     "type": "object",
                   },
+                  "additionalParams": {
+                    "additionalProperties": {
+                      "type": "string",
+                    },
+                    "description": "Extra query parameters to append to the provider authorization URL (e.g. Cognito identity_provider, Google hd).",
+                    "propertyNames": {
+                      "type": "string",
+                    },
+                    "type": "object",
+                  },
                   "callbackURL": {
                     "description": "The URL to redirect to after the user has signed in",
                     "type": "string",
@@ -2084,12 +2141,6 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                       "refreshToken": {
                         "type": "string",
                       },
-                      "scopes": {
-                        "items": {
-                          "type": "string",
-                        },
-                        "type": "array",
-                      },
                       "token": {
                         "type": "string",
                       },
@@ -2098,6 +2149,10 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                       "token",
                     ],
                     "type": "object",
+                  },
+                  "loginHint": {
+                    "description": "The login hint to use for the authorization code request",
+                    "type": "string",
                   },
                   "provider": {
                     "anyOf": [
@@ -2322,6 +2377,9 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                       "id": {
                         "type": "string",
                       },
+                      "issuer": {
+                        "type": "string",
+                      },
                       "providerId": {
                         "type": "string",
                       },
@@ -2344,6 +2402,7 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                       "providerId",
                       "createdAt",
                       "updatedAt",
+                      "issuer",
                       "accountId",
                       "userId",
                       "scopes",
@@ -2730,24 +2789,42 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "accountId": {
-                    "description": "The account ID associated with the refresh token",
-                    "type": "string",
+                "anyOf": [
+                  {
+                    "properties": {
+                      "accountId": {
+                        "description": "The Better Auth account ID",
+                        "type": "string",
+                      },
+                      "userId": {
+                        "description": "The user ID associated with the account",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "accountId",
+                    ],
+                    "type": "object",
                   },
-                  "providerId": {
-                    "description": "The provider ID for the OAuth provider",
-                    "type": "string",
+                  {
+                    "properties": {
+                      "useAccountCookie": {
+                        "description": "Select the current OAuth account from its signed cookie",
+                        "enum": [
+                          true,
+                        ],
+                      },
+                      "userId": {
+                        "description": "The user ID associated with the account",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "useAccountCookie",
+                    ],
+                    "type": "object",
                   },
-                  "userId": {
-                    "description": "The user ID associated with the account",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "providerId",
                 ],
-                "type": "object",
               },
             },
           },
@@ -4116,6 +4193,16 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                     },
                     "type": "object",
                   },
+                  "additionalParams": {
+                    "additionalProperties": {
+                      "type": "string",
+                    },
+                    "description": "Extra query parameters to append to the provider authorization URL (e.g. Cognito identity_provider, Google hd).",
+                    "propertyNames": {
+                      "type": "string",
+                    },
+                    "type": "object",
+                  },
                   "callbackURL": {
                     "description": "Callback URL to redirect to after the user has signed in",
                     "type": "string",
@@ -4397,11 +4484,25 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
           "content": {
             "application/json": {
               "schema": {
-                "properties": {},
+                "properties": {
+                  "callbackURL": {
+                    "description": "The URL to redirect to after provider logout",
+                    "type": "string",
+                  },
+                  "disableRedirect": {
+                    "description": "Return the provider logout URL without redirecting",
+                    "type": "boolean",
+                  },
+                  "state": {
+                    "description": "State to pass to the provider logout endpoint",
+                    "type": "string",
+                  },
+                },
                 "type": "object",
               },
             },
           },
+          "required": false,
         },
         "responses": {
           "200": {
@@ -4409,8 +4510,16 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
               "application/json": {
                 "schema": {
                   "properties": {
+                    "redirect": {
+                      "description": "Whether the client should redirect to the provider logout URL",
+                      "type": "boolean",
+                    },
                     "success": {
                       "type": "boolean",
+                    },
+                    "url": {
+                      "description": "Provider logout URL when RP-initiated logout is available",
+                      "type": "string",
                     },
                   },
                   "type": "object",
@@ -4556,9 +4665,16 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                     "description": "The password of the user",
                     "type": "string",
                   },
+                  "preferences": {
+                    "type": "string",
+                  },
                   "rememberMe": {
                     "description": "If this is false, the session will not be remembered. Default is \`true\`.",
                     "type": "boolean",
+                  },
+                  "role": {
+                    "default": "user",
+                    "type": "string",
                   },
                 },
                 "required": [
@@ -4771,14 +4887,12 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
               "schema": {
                 "properties": {
                   "accountId": {
-                    "type": "string",
-                  },
-                  "providerId": {
+                    "description": "The Better Auth account ID to unlink",
                     "type": "string",
                   },
                 },
                 "required": [
-                  "providerId",
+                  "accountId",
                 ],
                 "type": "object",
               },
@@ -5070,6 +5184,13 @@ exports[`open-api > should generate OpenAPI schema > openAPISchema 1`] = `
                   },
                   "name": {
                     "description": "The name of the user",
+                    "type": "string",
+                  },
+                  "preferences": {
+                    "type": "string",
+                  },
+                  "role": {
+                    "default": "user",
                     "type": "string",
                   },
                 },
