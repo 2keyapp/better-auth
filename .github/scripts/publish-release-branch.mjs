@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 /**
+ * CRITICAL: Branches `release`, `release-flutter`, and `release-scim` are install tips
+ * (packaging artifacts), NOT feature branches. Do NOT delete them.
+ * Consumers pin `github:2keyapp/better-auth#release*` - `#main` is the monorepo root
+ * and is not installable. See .github/RELEASE-BRANCHES.md.
+ *
  * Build and pack Better Auth workspace packages, then force-push standalone
  * artifacts to git branches for git-dependency consumers.
  *

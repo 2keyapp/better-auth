@@ -1,3 +1,6 @@
+# CRITICAL — release tips are packaging artifacts, not feature branches.
+# Never delete `release` / `release-flutter` / `release-scim` (see .github/RELEASE-BRANCHES.md).
+# `#main` is the monorepo root and is NOT installable for npm git deps.
 name: Publish release branch
 
 on:
