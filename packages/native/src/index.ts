@@ -20,9 +20,6 @@ declare module "@better-auth/core" {
 		flutter: {
 			creator: typeof authNative;
 		};
-		"auth-native": {
-			creator: typeof authNative;
-		};
 	}
 }
 
@@ -131,9 +128,5 @@ export const authNative = (options?: AuthNativeOptions | undefined) => {
 	} satisfies BetterAuthPlugin;
 };
 
-/**
- * @deprecated Prefer {@link authNative}. Same behavior; kept for existing hosts.
- */
-export function flutter(options?: AuthNativeOptions | undefined) {
-	return authNative(options);
-}
+/** @deprecated Prefer {@link authNative}. Same implementation. */
+export const flutter = authNative;
