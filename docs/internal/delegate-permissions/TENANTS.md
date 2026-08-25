@@ -1,8 +1,8 @@
 # Platform tenants (Auth view)
 
-Better Auth `delegate-permissions` is **product-neutral**. Tenant action/profile seeds live in `2keyapp/dp-sdk/catalogs/<slug>` and are passed as `seed: CatalogSeed` at deploy time — not as built-in plugin string shortcuts (except `"demo"` for tests).
+Better Auth `delegate-permissions` is **product-neutral**. Tenant action/profile seeds live in `2keyapp/2key-core-sdk/catalogs/<slug>` and are passed as `seed: CatalogSeed` at deploy time — not as built-in plugin string shortcuts (except `"demo"` for tests).
 
-Canonical registry: [`2keyapp/dp-sdk` TENANTS.md](https://github.com/2keyapp/dp-sdk/blob/main/TENANTS.md).
+Canonical registry: [`2keyapp/2key-core-sdk` TENANTS.md](https://github.com/2keyapp/2key-core-sdk/blob/main/TENANTS.md).
 
 | Slug         | Display    | Catalog package            | Notes                                    |
 | ------------ | ---------- | -------------------------- | ---------------------------------------- |

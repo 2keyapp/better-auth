@@ -2,7 +2,7 @@
 
 # Delegate Permissions — IDR tenant notes
 
-Catalog: `@2key/catalog-idr` (`2keyapp/dp-sdk`). Commercial packages: Billing `IDR_BILLING_PACKAGES.md`.
+Catalog: `@2key/catalog-idr` (`2keyapp/2key-core-sdk`). Commercial packages: Billing `IDR_BILLING_PACKAGES.md`.
 
 ## Entity packages
 
