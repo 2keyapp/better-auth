@@ -5,6 +5,11 @@ import { getDelegatePermissionsAdapter } from "./adapter";
 import { expandProfile } from "./capability/expand";
 import { assertSubset } from "./capability/subset";
 import type { Capability, CapabilitySet, Catalog } from "./capability/types";
+import {
+	DEFAULT_CA_CERT_EXPIRES_IN,
+	DEFAULT_CREDENTIAL_EXPIRES_IN,
+	secondsToDays,
+} from "./defaults";
 import { DELEGATE_PERMISSIONS_ERROR_CODES } from "./error-codes";
 import {
 	machineNameKey,
@@ -78,7 +83,12 @@ export function createCredentialEndpoints(opts: {
 	getFallbackCosignKey?: () => Promise<KeyPairMaterial>;
 	resolveCosign: () => Promise<CosignProvider>;
 	onEntityKickstart?: DelegatePermissionsOptions["onEntityKickstart"];
+	credentialExpiresIn?: number;
+	caCertExpiresIn?: number;
 }) {
+	const credentialExpiresIn =
+		opts.credentialExpiresIn ?? DEFAULT_CREDENTIAL_EXPIRES_IN;
+	const caCertExpiresIn = opts.caCertExpiresIn ?? DEFAULT_CA_CERT_EXPIRES_IN;
 	const dpOf = (adapter: Parameters<typeof getDelegatePermissionsAdapter>[0]) =>
 		getDelegatePermissionsAdapter(adapter, opts.serviceId);
 
@@ -210,6 +220,7 @@ export function createCredentialEndpoints(opts: {
 					issuerSki: rootKeys.ski,
 					issuerPrivateJwk: rootKeys.privateJwk,
 					package: entityPackage,
+					ttlSeconds: credentialExpiresIn,
 				});
 
 				rootCredential = await cosign.cosignRoot(rootCredential);
@@ -217,6 +228,7 @@ export function createCredentialEndpoints(opts: {
 				const entityCa = await createSelfSignedCaPem(
 					rootKeys.privateJwk,
 					`Entity CA ${entityId}`,
+					secondsToDays(caCertExpiresIn),
 				);
 				const platformCaCertCosign = await cosign.cosignCaCert(
 					entityCa.rootPem,
@@ -231,6 +243,7 @@ export function createCredentialEndpoints(opts: {
 					issuerPrivateJwk: rootKeys.privateJwk,
 					package: entityPackage,
 					zone: "",
+					ttlSeconds: credentialExpiresIn,
 				});
 
 				await dp.createEntity({
@@ -444,6 +457,7 @@ export function createCredentialEndpoints(opts: {
 					issuerPrivateJwk: ctx.body.issuerPrivateJwk,
 					zone,
 					package: entity.package as EntityPackage,
+					ttlSeconds: credentialExpiresIn,
 				});
 
 				await dp.createCredential({ credential });
@@ -571,6 +585,7 @@ export function createCredentialEndpoints(opts: {
 					issuerPrivateJwk: ctx.body.issuerPrivateJwk,
 					host,
 					package: entity.package as EntityPackage,
+					ttlSeconds: credentialExpiresIn,
 				});
 
 				let seatId: string | undefined;

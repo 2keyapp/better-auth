@@ -31,4 +31,8 @@ export const DELEGATE_PERMISSIONS_ERROR_CODES = defineErrorCodes({
 	CREDENTIAL_NOT_ACTIVE: "Credential is not in active status",
 	RENEWAL_IDENTITY_MISMATCH:
 		"Renewal CSR identity does not match original credential",
+	INVITE_NOT_FOUND: "Enrollment invite not found",
+	INVITE_EXPIRED: "Enrollment invite has expired",
+	INVITE_USED: "Enrollment invite has already been used",
+	INVITE_MISMATCH: "CSR entity does not match the invite",
 });

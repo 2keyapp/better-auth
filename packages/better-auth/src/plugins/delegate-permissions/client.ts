@@ -19,6 +19,7 @@ export const delegatePermissionsClient = () => {
 			"/delegate-permissions/issue-delegate": "POST",
 			"/delegate-permissions/issue-machine": "POST",
 			"/delegate-permissions/enroll-create": "POST",
+			"/delegate-permissions/enroll-invite": "POST",
 			"/delegate-permissions/enroll-list": "GET",
 			"/delegate-permissions/enroll-approve": "POST",
 			"/delegate-permissions/enroll-reject": "POST",

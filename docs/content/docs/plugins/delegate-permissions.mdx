@@ -179,6 +179,37 @@ Enrollment kinds: `machine_target`, `machine_source`, `zone_authority`, `interim
   If your product adds a domain suffix to machine identities (e.g. `db1--acme.com.example.io`), strip it before passing `host` to the plugin. The plugin only understands the canonical `{path}--{entityId}` form.
 </Callout>
 
+Push-invite (optional): an admin with a session issues a token for an **entity**. The device chooses its own machine name when it submits the CSR; the invite only binds the CSR to that org so it shows up in that admin's enroll inbox.
+
+```ts
+const invite = await authClient.$fetch("/delegate-permissions/enroll-invite", {
+  method: "POST",
+  body: {
+    entityId: "acme.com",
+    expiresIn: 7 * 24 * 60 * 60, // seconds; omit to use plugin `inviteExpiresIn` (default 7d)
+    maxUses: 1, // omit to use plugin `inviteMaxUses` (default 1); `0` = unlimited until expiresAt
+  },
+})
+
+const preview = await authClient.$fetch("/delegate-permissions/enroll-invite", {
+  method: "GET",
+  query: { inviteToken: invite.data.inviteToken },
+})
+// entityId, expiresAt, maxUses — does not consume a use
+
+await authClient.$fetch("/delegate-permissions/enroll-create", {
+  method: "POST",
+  body: {
+    inviteToken: invite.data.inviteToken,
+    host: "laptop1--acme.com", // device-chosen name
+    kind: "machine_target",
+    csrPem,
+  },
+})
+```
+
+Wrong org, expired, or exhausted tokens fail with `INVITE_MISMATCH` / `INVITE_EXPIRED` / `INVITE_USED` (expiry and use-cap: whichever hits first). Every invite has `expiresAt`. `maxUses` defaults to the plugin `inviteMaxUses` (`1`); `0` is unlimited until expiry. Pull enroll without a token is unchanged. Invites are machine-only (`machine_target` / `machine_source`); human admin invite remains `interim_admin` enroll / `issue-delegate`.
+
 `enroll-instant` is the same-host shortcut when admin CA keys are local (create + approve in one call).
 
 ### Platform Root for the TLS terminator
@@ -303,6 +334,36 @@ export const delegatePermissionsOptionsType = {
     type: "number",
     required: false,
   },
+  inviteExpiresIn: {
+    description: "Default enroll-invite lifetime in seconds when the request omits `expiresIn`. Capped by `inviteMaxExpiresIn`. Default: `604800` (7 days).",
+    type: "number",
+    required: false,
+  },
+  inviteMaxExpiresIn: {
+    description: "Maximum enroll-invite `expiresIn` in seconds. Default: `2592000` (30 days).",
+    type: "number",
+    required: false,
+  },
+  inviteMaxUses: {
+    description: "Default enroll-invite redeem cap when the request omits `maxUses`. `0` = unlimited until expiry. Default: `1`.",
+    type: "number",
+    required: false,
+  },
+  credentialExpiresIn: {
+    description: "Lifetime in seconds for credentials the plugin mints (kickstart, issue-delegate, issue-machine, enroll-approve). Default: `31536000` (365 days).",
+    type: "number",
+    required: false,
+  },
+  caCertExpiresIn: {
+    description: "Lifetime in seconds for self-signed Entity / Platform CA certificates and Platform CA endorsements. Default: `315360000` (3650 days).",
+    type: "number",
+    required: false,
+  },
+  leafCertExpiresIn: {
+    description: "Lifetime in seconds for Platform-endorsed machine leaf certificates. Default: `31536000` (365 days).",
+    type: "number",
+    required: false,
+  },
   cosign: {
     description: "Optional `CosignProvider`. When omitted, the plugin uses `platformCa`.",
     type: "CosignProvider",
@@ -357,6 +418,7 @@ The plugin adds the following tables:
 | `dpUserCredentialBind` | Bind a user to a credential SKI                       |
 | `dpNameOccupancy`      | Zone vs machine name occupancy (XOR)                  |
 | `dpEnrollRequest`      | CSR inbox (pending → approved → consumed)             |
+| `dpEnrollInvite`       | Push-invite token that authorizes a CSR for an entity |
 
 ### Enroll request
 
@@ -416,6 +478,58 @@ export const dpEnrollRequestFields = [
 ];
 
 <DatabaseTable name="dpEnrollRequest" fields={dpEnrollRequestFields} />
+
+### Enroll invite
+
+Table Name: `dpEnrollInvite`
+
+export const dpEnrollInviteFields = [
+	{
+		name: "id",
+		type: "string",
+		description: "Invite id",
+		isPrimaryKey: true,
+	},
+	{
+		name: "entityId",
+		type: "string",
+		description: "Entity this invite is for",
+	},
+	{
+		name: "role",
+		type: "string",
+		description: "`machine_target` or `machine_source`",
+	},
+	{
+		name: "inviteToken",
+		type: "string",
+		description: "Bearer token presented on enroll-create",
+		isUnique: true,
+	},
+	{
+		name: "expiresAt",
+		type: "date",
+		description: "Invite expiry (always set; plugin `inviteExpiresIn` / `inviteMaxExpiresIn`)",
+	},
+	{
+		name: "maxUses",
+		type: "number",
+		description: "Redeem cap. Plugin `inviteMaxUses` default `1`; `0` unlimited until expiry",
+	},
+	{
+		name: "usedCount",
+		type: "number",
+		description: "Successful enroll-create redeems so far",
+	},
+	{
+		name: "consumedAt",
+		type: "date",
+		description: "Set when usedCount reaches maxUses (not used for unlimited)",
+		isOptional: true,
+	},
+];
+
+<DatabaseTable name="dpEnrollInvite" fields={dpEnrollInviteFields} />
 
 <Callout>
   You can customize table names and fields. See the [Database concept documentation](/docs/concepts/database#custom-table-names).

@@ -81,6 +81,7 @@ async function importEd25519Public(
 export async function createSelfSignedCaPem(
 	privateJwk: Record<string, unknown>,
 	commonName: string,
+	notAfterDays?: number,
 ): Promise<{
 	rootPem: string;
 	ski: string;
@@ -101,7 +102,9 @@ export async function createSelfSignedCaPem(
 	const publicKey = await importEd25519Public(publicJwk);
 
 	const notBefore = new Date();
-	const notAfter = new Date(notBefore.getTime() + 3650 * DAY_MS);
+	const notAfter = new Date(
+		notBefore.getTime() + (notAfterDays ?? 3650) * DAY_MS,
+	);
 	const cert = await x509.X509CertificateGenerator.createSelfSigned({
 		serialNumber: randomSerialHex(),
 		name: `CN=${commonName}`,
@@ -126,12 +129,13 @@ export async function createSelfSignedCaPem(
 export async function createPlatformRootPem(
 	privateJwk: Record<string, unknown>,
 	commonName = DEFAULT_PLATFORM_CN,
+	notAfterDays?: number,
 ): Promise<{
 	rootPem: string;
 	ski: string;
 	publicJwk: Record<string, unknown>;
 }> {
-	return createSelfSignedCaPem(privateJwk, commonName);
+	return createSelfSignedCaPem(privateJwk, commonName, notAfterDays);
 }
 
 /** Load Platform CA from private JWK + optional stored root PEM. */
@@ -139,12 +143,14 @@ export async function loadPlatformCaMaterial(input: {
 	privateJwk: Record<string, unknown>;
 	rootPem?: string;
 	commonName?: string;
+	notAfterDays?: number;
 }): Promise<PlatformCaMaterial> {
 	setX509Crypto();
 
 	const built = await createPlatformRootPem(
 		input.privateJwk,
 		input.commonName ?? DEFAULT_PLATFORM_CN,
+		input.notAfterDays,
 	);
 	const rootPem = input.rootPem?.trim() ? input.rootPem : built.rootPem;
 	const privateKey = await importEd25519Private({
@@ -172,7 +178,8 @@ export async function loadPlatformCaMaterial(input: {
 
 /** Generate an ephemeral Platform CA (dev/test). */
 export async function generateEphemeralPlatformCa(
-	commonName = `${DEFAULT_PLATFORM_CN} (dev)`,
+	commonName?: string,
+	notAfterDays?: number,
 ): Promise<PlatformCaMaterial> {
 	setX509Crypto();
 	const { privateKey, publicKey } = (await globalThis.crypto.subtle.generateKey(
@@ -185,7 +192,8 @@ export async function generateEphemeralPlatformCa(
 	const ski = await skiFromPublicJwk(publicJwk);
 	return loadPlatformCaMaterial({
 		privateJwk: { ...privateJwk, kid: ski, alg: "EdDSA" },
-		commonName,
+		commonName: commonName ?? `${DEFAULT_PLATFORM_CN} (dev)`,
+		notAfterDays,
 	});
 }
 

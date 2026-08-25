@@ -15,6 +15,7 @@ import type {
 	DpActionRow,
 	DpCatalogMetaRow,
 	DpCredentialRow,
+	DpEnrollInviteRow,
 	DpEnrollRequestRow,
 	DpEntityRow,
 	DpNameOccupancyRow,
@@ -556,6 +557,72 @@ export function getDelegatePermissionsAdapter(
 				model: "dpEnrollRequest",
 				where: [{ field: "id", value: id }],
 				update: { ...update, updatedAt: new Date() },
+			});
+		},
+
+		async createEnrollInvite(input: {
+			entityId: string;
+			host?: string | null;
+			zone?: string | null;
+			role: string;
+			inviteToken: string;
+			expiresAt: Date;
+			maxUses?: number;
+			createdByUserId?: string | null;
+		}): Promise<DpEnrollInviteRow> {
+			return adapter.create<Omit<DpEnrollInviteRow, "id">, DpEnrollInviteRow>({
+				model: "dpEnrollInvite",
+				data: {
+					entityId: input.entityId,
+					host: input.host ?? "",
+					zone: input.zone ?? null,
+					role: input.role,
+					inviteToken: input.inviteToken,
+					expiresAt: input.expiresAt,
+					maxUses: input.maxUses ?? 1,
+					usedCount: 0,
+					consumedAt: null,
+					createdByUserId: input.createdByUserId ?? null,
+					createdAt: new Date(),
+				},
+			});
+		},
+
+		async getEnrollInviteByToken(
+			inviteToken: string,
+		): Promise<DpEnrollInviteRow | null> {
+			return adapter.findOne<DpEnrollInviteRow>({
+				model: "dpEnrollInvite",
+				where: [{ field: "inviteToken", value: inviteToken }],
+			});
+		},
+
+		async redeemEnrollInvite(id: string): Promise<DpEnrollInviteRow | null> {
+			const row = await adapter.findOne<DpEnrollInviteRow>({
+				model: "dpEnrollInvite",
+				where: [{ field: "id", value: id }],
+			});
+			if (!row || row.consumedAt) {
+				return null;
+			}
+			const maxUses =
+				typeof row.maxUses === "number" && row.maxUses >= 0 ? row.maxUses : 1;
+			const usedCount =
+				typeof row.usedCount === "number" && row.usedCount >= 0
+					? row.usedCount
+					: 0;
+			if (maxUses > 0 && usedCount >= maxUses) {
+				return null;
+			}
+			const next = usedCount + 1;
+			const exhausted = maxUses > 0 && next >= maxUses;
+			return adapter.update<DpEnrollInviteRow>({
+				model: "dpEnrollInvite",
+				where: [{ field: "id", value: id }],
+				update: {
+					usedCount: next,
+					...(exhausted ? { consumedAt: new Date() } : {}),
+				},
 			});
 		},
 	};
