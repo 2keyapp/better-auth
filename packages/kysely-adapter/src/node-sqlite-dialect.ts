@@ -6,7 +6,6 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type {
 	DatabaseConnection,
 	DatabaseIntrospector,
-	DatabaseMetadata,
 	DatabaseMetadataOptions,
 	Dialect,
 	DialectAdapter,
@@ -27,6 +26,10 @@ import {
 class NodeSqliteAdapter implements DialectAdapterBase {
 	get supportsCreateIfNotExists(): boolean {
 		return true;
+	}
+
+	get supportsMultipleConnections(): boolean {
+		return false;
 	}
 
 	get supportsTransactionalDdl(): boolean {
@@ -219,14 +222,6 @@ class NodeSqliteIntrospector implements DatabaseIntrospector {
 		return Promise.all(tables.map(({ name }) => this.#getTableMetadata(name)));
 	}
 
-	async getMetadata(
-		options?: DatabaseMetadataOptions | undefined,
-	): Promise<DatabaseMetadata> {
-		return {
-			tables: await this.getTables(options),
-		};
-	}
-
 	async #getTableMetadata(table: string): Promise<TableMetadata> {
 		const db = this.#db;
 
@@ -269,6 +264,7 @@ class NodeSqliteIntrospector implements DatabaseIntrospector {
 				hasDefaultValue: col.dflt_value != null,
 			})),
 			isView: false,
+			isForeign: false,
 		};
 	}
 }

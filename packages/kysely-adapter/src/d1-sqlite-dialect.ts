@@ -3,7 +3,6 @@ import type {
 	CompiledQuery,
 	DatabaseConnection,
 	DatabaseIntrospector,
-	DatabaseMetadata,
 	DatabaseMetadataOptions,
 	Dialect,
 	DialectAdapter,
@@ -252,6 +251,7 @@ class D1SqliteIntrospector implements DatabaseIntrospector {
 			return {
 				name: table.name,
 				isView: table.type === "view",
+				isForeign: false,
 				columns: columnInfo.map((col) => ({
 					name: col.name,
 					dataType: col.type,
@@ -261,14 +261,6 @@ class D1SqliteIntrospector implements DatabaseIntrospector {
 				})),
 			};
 		});
-	}
-
-	async getMetadata(
-		options?: DatabaseMetadataOptions,
-	): Promise<DatabaseMetadata> {
-		return {
-			tables: await this.getTables(options),
-		};
 	}
 }
 
