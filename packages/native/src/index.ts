@@ -3,32 +3,41 @@ import { createAuthMiddleware } from "@better-auth/core/api";
 import { flutterAuthorizationProxy } from "./routes";
 import { PACKAGE_VERSION } from "./version";
 
-export interface FlutterOptions {
+export interface AuthNativeOptions {
 	/**
-	 * Disable origin override for Flutter API routes.
+	 * Disable origin override for native API routes.
 	 * When set to true, the origin header will not be overridden from
-	 * the `flutter-origin` request header.
+	 * the `flutter-origin` request header (legacy header name kept for clients).
 	 */
 	disableOriginOverride?: boolean | undefined;
 }
 
+/** @deprecated Use {@link AuthNativeOptions}. */
+export type FlutterOptions = AuthNativeOptions;
+
 declare module "@better-auth/core" {
 	interface BetterAuthPluginRegistry<AuthOptions, Options> {
 		flutter: {
-			creator: typeof flutter;
+			creator: typeof authNative;
+		};
+		"auth-native": {
+			creator: typeof authNative;
 		};
 	}
 }
 
 /**
- * Better Auth server plugin for Flutter / Dart clients.
+ * Better Auth server plugin for native (Flutter / Dart) clients.
  *
  * Adds trusted-origin helpers for custom URL schemes, copies
  * `flutter-origin` into the request origin header (so CSRF/origin
  * checks work without a browser Origin), and attaches session cookies
  * to deep-link redirects after OAuth / magic-link / email verification.
+ *
+ * Wire plugin id remains `"flutter"` for backward compatibility with
+ * existing clients and `flutter-origin` headers.
  */
-export const flutter = (options?: FlutterOptions | undefined) => {
+export const authNative = (options?: AuthNativeOptions | undefined) => {
 	return {
 		id: "flutter",
 		version: PACKAGE_VERSION,
@@ -121,3 +130,6 @@ export const flutter = (options?: FlutterOptions | undefined) => {
 		options,
 	} satisfies BetterAuthPlugin;
 };
+
+/** @deprecated Prefer {@link authNative}. Same implementation. */
+export const flutter = authNative;

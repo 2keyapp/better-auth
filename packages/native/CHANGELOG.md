@@ -1,4 +1,4 @@
-# @better-auth/flutter
+# @2key/auth-native
 
 ## 1.6.23
 

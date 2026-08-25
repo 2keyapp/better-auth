@@ -149,7 +149,7 @@
       "!**/tmp-docs-fetch",
       "!**/.claude/worktrees/**",
       "!**/.dart_tool",
-      "!**/packages/flutter/dart/.dart_tool/**"
+      "!**/packages/clients/dart/.dart_tool/**"
     ]
   }
 }

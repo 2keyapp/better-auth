@@ -1,77 +1,49 @@
-# Better Auth Flutter Plugin
+# @2key/auth-native
 
-Server-side Better Auth plugin for Flutter and Dart clients.
+Better Auth **server** plugin for native (Flutter / Dart) clients.
 
-The Dart client SDK lives at `packages/flutter/dart` and is consumed via
-GitHub (`path: packages/flutter/dart`). This npm package is the TypeScript
-server plugin (`@better-auth/flutter`).
+Formerly published as `@better-auth/flutter`.
 
-## Installation
+The Dart client SDK lives at `packages/clients/dart` and is consumed via
+GitHub (`path: packages/clients/dart`). This npm package is the TypeScript
+server plugin (`@2key/auth-native`).
 
-### Server (Node.js)
-
-Install from GitHub release branches:
+## Install (server / billing-auth-host)
 
 ```json
 {
   "dependencies": {
-    "better-auth": "github:2keyapp/better-auth#release",
-    "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
+    "@2key/auth-native": "github:2keyapp/better-auth#release-native"
   }
 }
 ```
 
 | Package | Release branch |
-| --- | --- |
-| `better-auth` | `release` |
-| `@better-auth/flutter` | `release-flutter` |
+|---------|----------------|
+| `@2key/auth-native` | `release-native` |
+| `@better-auth/flutter` | **deprecated** — migrate to `@2key/auth-native` |
 
-### Client (Flutter / Dart)
+## Dart client
 
 ```yaml
-dependencies:
-  better_auth:
-    git:
-      url: https://github.com/2keyapp/better-auth.git
-      ref: main
-      path: packages/flutter/dart
+better_auth:
+  git:
+    url: https://github.com/2keyapp/better-auth.git
+    path: packages/clients/dart
+    ref: <PINNED_SHA>
 ```
 
-| Package | Git ref |
-| --- | --- |
-| `better_auth` | `main` (monorepo path; pin by commit in production) |
+Host apps must **not** depend on this Dart package directly — use
+`two_key_dart_sdk` from `2key-billing-sdks`.
 
-See the [Install from GitHub](https://www.better-auth.com/docs/guides/github-installation) guide for details.
-
-## Basic Usage
+## Usage
 
 ```ts
-import { betterAuth } from "better-auth";
-import { flutter } from "@better-auth/flutter";
+import { authNative } from "@2key/auth-native";
+// deprecated alias still works:
+// import { flutter } from "@2key/auth-native";
 
 export const auth = betterAuth({
-  plugins: [flutter()],
-  emailAndPassword: {
-    enabled: true,
-  },
-  // Replace "myapp" with your Flutter deep-link scheme
-  trustedOrigins: ["myapp://"],
+  plugins: [authNative()],
 });
 ```
-
-The Dart client should send a `flutter-origin` header (e.g. `myapp://`) on
-authenticated requests so the plugin can satisfy origin checks.
-
-For **session handoff** (Flutter → web while already signed in), use the
-[one-time-token](https://www.better-auth.com/docs/plugins/one-time-token)
-plugin — see the [Flutter integration guide](https://www.better-auth.com/docs/integrations/flutter).
-
-## Documentation
-
-* **Flutter Integration Guide:** [Flutter Integration Guide](https://www.better-auth.com/docs/integrations/flutter)
-* **Install from GitHub:** [Install from GitHub](https://www.better-auth.com/docs/guides/github-installation)
-* **Main Better Auth Installation:** [Installation Guide](https://www.better-auth.com/docs/installation)
-
-## License
-
-MIT

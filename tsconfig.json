@@ -34,7 +34,7 @@
       "path": "./packages/expo/tsconfig.test.json"
     },
     {
-      "path": "./packages/flutter/tsconfig.json"
+      "path": "./packages/native/tsconfig.json"
     },
     {
       "path": "./packages/i18n/tsconfig.json"

@@ -33,7 +33,7 @@ jobs:
           filters: |
             packages:
               - 'packages/**'
-              - '!packages/flutter/**'
+              - '!packages/native/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'

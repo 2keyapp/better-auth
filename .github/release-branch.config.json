@@ -18,9 +18,9 @@
       "tagPrefix": "release-scim-v"
     },
     {
-      "filter": "./packages/flutter",
-      "branch": "release-flutter",
-      "tagPrefix": "release-flutter-v"
+      "filter": "./packages/native",
+      "branch": "release-native",
+      "tagPrefix": "release-native-v"
     }
   ]
 }

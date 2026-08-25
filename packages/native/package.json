@@ -1,21 +1,23 @@
 {
-  "name": "@better-auth/flutter",
+  "name": "@2key/auth-native",
   "version": "1.6.23",
-  "description": "Better Auth integration for Flutter and Dart applications.",
+  "description": "Better Auth server plugin for native (Flutter/Dart) clients. Formerly @better-auth/flutter.",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://www.better-auth.com/docs/integrations/flutter",
+  "homepage": "https://github.com/2keyapp/better-auth/tree/main/packages/native",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/2keyapp/better-auth.git",
-    "directory": "packages/flutter"
+    "directory": "packages/native"
   },
   "keywords": [
     "auth",
     "flutter",
     "dart",
+    "native",
     "typescript",
-    "better-auth"
+    "better-auth",
+    "2key"
   ],
   "publishConfig": {
     "access": "public"

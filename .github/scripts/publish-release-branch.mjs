@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CRITICAL: Branches `release`, `release-flutter`, and `release-scim` are install tips
+ * CRITICAL: Branches `release`, `release-native`, and `release-scim` are install tips
  * (packaging artifacts), NOT feature branches. Do NOT delete them.
  * Consumers pin `github:2keyapp/better-auth#release*` - `#main` is the monorepo root
  * and is not installable. See .github/RELEASE-BRANCHES.md.
@@ -11,7 +11,7 @@
  * Consumer example (package.json):
  *   "better-auth": "github:2keyapp/better-auth#release"
  *   "@better-auth/scim": "github:2keyapp/better-auth#release-scim"
- *   "@better-auth/flutter": "github:2keyapp/better-auth#release-flutter"
+ *   "@2key/auth-native": "github:2keyapp/better-auth#release-native"
  */
 import { execFileSync } from "node:child_process";
 import {

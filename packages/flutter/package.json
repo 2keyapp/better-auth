@@ -1,0 +1,18 @@
+{
+  "name": "@better-auth/flutter",
+  "version": "1.6.23",
+  "private": true,
+  "description": "Deprecated shim — use @2key/auth-native. Not published to release-flutter anymore.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@2key/auth-native": "workspace:*"
+  }
+}

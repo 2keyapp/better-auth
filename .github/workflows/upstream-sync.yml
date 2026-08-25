@@ -1,0 +1,72 @@
+name: Upstream sync
+
+on:
+  schedule:
+    # Mondays 15:00 UTC
+    - cron: "0 15 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/better-auth/better-auth.git || true
+          git fetch upstream main
+          git fetch origin main
+
+      - name: Detect divergence
+        id: div
+        run: |
+          BEHIND=$(git rev-list --count origin/main..upstream/main || echo 0)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Upstream commits not in origin/main: $BEHIND"
+
+      - name: Setup pnpm
+        if: steps.div.outputs.behind != '0'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: steps.div.outputs.behind != '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Merge upstream and open PR
+        if: steps.div.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="chore/upstream-sync-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH" origin/main
+          set +e
+          git merge --no-edit upstream/main
+          MERGE_STATUS=$?
+          set -e
+          if [ "$MERGE_STATUS" -ne 0 ]; then
+            echo "Merge conflicts — leaving conflicted tree for human resolution."
+            git add -A
+            git commit -m "chore: sync upstream better-auth (conflicts to resolve)" || true
+          fi
+          pnpm install
+          pnpm --filter @2key/auth-native... build || true
+          git push -u origin "$BRANCH" --force-with-lease
+          gh pr create \
+            --title "chore: sync upstream better-auth" \
+            --body "Automated upstream sync. Behind by ${{ steps.div.outputs.behind }} commit(s). See docs/UPSTREAM_SYNC.md." \
+            --base main \
+            --head "$BRANCH" || echo "PR may already exist"
