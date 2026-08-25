@@ -131,5 +131,9 @@ export const authNative = (options?: AuthNativeOptions | undefined) => {
 	} satisfies BetterAuthPlugin;
 };
 
-/** @deprecated Prefer {@link authNative}. Same implementation. */
-export const flutter = authNative;
+/**
+ * @deprecated Prefer {@link authNative}. Same behavior; kept for existing hosts.
+ */
+export function flutter(options?: AuthNativeOptions | undefined) {
+	return authNative(options);
+}
