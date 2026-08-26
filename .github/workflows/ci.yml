@@ -1,15 +1,7 @@
 name: CI
 
 on:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-  push:
-    branches:
-      - main
-      - next
-  merge_group:
+  workflow_dispatch: {}
 
 permissions: {}
 

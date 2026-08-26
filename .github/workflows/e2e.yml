@@ -1,9 +1,6 @@
 name: E2E
 on:
-  push:
-    branches: [ main, next ]
-  merge_group:
-  pull_request:
+  workflow_dispatch: {}
 
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}

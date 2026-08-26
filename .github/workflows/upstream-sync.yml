@@ -1,10 +1,7 @@
 name: Upstream sync
 
 on:
-  schedule:
-    # Mondays 15:00 UTC
-    - cron: "0 15 * * 1"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: write

@@ -1,13 +1,7 @@
 name: Verify Changesets
 
 on:
-  pull_request:
-    types: [opened, synchronize, labeled, unlabeled, edited]
-    branches:
-      - main
-      - next
-      - 'release/**'
-  merge_group:
+  workflow_dispatch: {}
 
 permissions: {}
 

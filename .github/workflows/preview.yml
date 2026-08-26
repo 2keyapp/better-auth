@@ -1,5 +1,6 @@
 name: Publish Any Commit
-on: [pull_request]
+on:
+  workflow_dispatch: {}
 
 permissions: {}
 

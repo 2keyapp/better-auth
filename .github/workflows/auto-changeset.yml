@@ -2,8 +2,7 @@
 name: Auto Changeset
 
 on:
-  issue_comment:
-    types: [created, edited]
+  workflow_dispatch: {}
 
 permissions: {}
 

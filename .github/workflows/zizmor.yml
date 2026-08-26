@@ -1,21 +1,12 @@
 name: GitHub Actions Security Analysis
 
 on:
-  push:
-    branches: [main, next]
-    paths:
-      - '.github/workflows/**'
-      - '.github/zizmor.yml'
-  pull_request:
-    paths:
-      - '.github/workflows/**'
-      - '.github/zizmor.yml'
+  workflow_dispatch: {}
 
 permissions: {}
 
 jobs:
   zizmor:
-    if: github.event_name == 'push' || !github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     permissions:
       security-events: write

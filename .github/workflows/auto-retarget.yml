@@ -1,9 +1,7 @@
 name: Auto-retarget
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
-    branches: [main]
+  workflow_dispatch: {}
 
 permissions: {}
 
