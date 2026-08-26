@@ -1,0 +1,62 @@
+{
+	"name": "@2key/auth-native",
+	"version": "1.6.23",
+	"description": "Better Auth server plugin for native (Flutter/Dart) clients. Formerly @better-auth/flutter.",
+	"type": "module",
+	"license": "MIT",
+	"homepage": "https://github.com/2keyapp/better-auth/tree/main/packages/native",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/2keyapp/better-auth.git",
+		"directory": "packages/native"
+	},
+	"keywords": [
+		"auth",
+		"flutter",
+		"dart",
+		"native",
+		"typescript",
+		"better-auth",
+		"2key"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"sideEffects": false,
+	"files": [
+		"dist"
+	],
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"dev-source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"typesVersions": {
+		"*": {
+			"*": [
+				"./dist/index.d.ts"
+			]
+		}
+	},
+	"dependencies": {
+		"zod": "^4.3.6"
+	},
+	"peerDependencies": {
+		"@better-auth/core": "^1.7.1",
+		"better-auth": "^1.7.1"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"lint:package": "publint run --strict --pack false",
+		"lint:types": "attw --profile esm-only --pack .",
+		"typecheck": "tsc --project tsconfig.json",
+		"test": "vitest",
+		"coverage": "vitest run --coverage --coverage.provider=istanbul"
+	}
+}
