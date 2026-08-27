@@ -86,9 +86,7 @@ export function scopeValueSubset(
 			}
 			// Exact version against range(s) — authorize path.
 			if (children.length === 1 && isExactVersion(children[0]!)) {
-				return parents.some((range) =>
-					semverSatisfies(children[0]!, range),
-				);
+				return parents.some((range) => semverSatisfies(children[0]!, range));
 			}
 			// Range ⊆ range — attenuation path.
 			return children.every((cr) =>
@@ -123,10 +121,7 @@ export function scopeValuesOverlap(
 			if (aa.length !== 1 || bb.length !== 1) {
 				return false;
 			}
-			return (
-				dnsPrefixSubset(aa[0]!, bb[0]!) ||
-				dnsPrefixSubset(bb[0]!, aa[0]!)
-			);
+			return dnsPrefixSubset(aa[0]!, bb[0]!) || dnsPrefixSubset(bb[0]!, aa[0]!);
 		}
 		case "path_prefix": {
 			const aa = asStringList(a);
@@ -135,8 +130,7 @@ export function scopeValuesOverlap(
 				return false;
 			}
 			return (
-				pathPrefixSubset(aa[0]!, bb[0]!) ||
-				pathPrefixSubset(bb[0]!, aa[0]!)
+				pathPrefixSubset(aa[0]!, bb[0]!) || pathPrefixSubset(bb[0]!, aa[0]!)
 			);
 		}
 		case "set": {

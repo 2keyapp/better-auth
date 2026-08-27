@@ -31,10 +31,8 @@ const EXACT_RE =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?$/;
 const WILDCARD_RE =
 	/^(0|[1-9]\d*)(?:\.(0|[1-9]\d*|x|\*))?(?:\.(0|[1-9]\d*|x|\*))?$/i;
-const CARET_RE =
-	/^\^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const TILDE_RE =
-	/^~(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const CARET_RE = /^\^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const TILDE_RE = /^~(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const GTE_LT_RE =
 	/^>=\s*(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\s+<\s*(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
@@ -222,7 +220,7 @@ function intervalSubset(
 	child: SemVerInterval,
 	parent: SemVerInterval,
 ): boolean {
-	// child.lo must be >= parent.lo (respecting inclusivity)
+	// child.lo must be >= parent.lo (respecting inclusive bounds)
 	const loCmp = cmpSemVer(child.lo, parent.lo);
 	if (loCmp < 0) {
 		return false;
@@ -276,7 +274,7 @@ export function semverRangesOverlap(a: string, b: string): boolean {
 		return inInterval(ib.lo, ia);
 	}
 
-	// a.lo < b.hi (with inclusivity) AND b.lo < a.hi
+	// a.lo < b.hi (with inclusive bounds) AND b.lo < a.hi
 	const aLoBeforeBHi =
 		ib.hi === null ||
 		cmpSemVer(ia.lo, ib.hi) < 0 ||

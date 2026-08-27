@@ -63,8 +63,6 @@ export type ProfileDef = {
 };
 
 /** Resolve capability effect with v1 default. */
-export function effectOf(
-	capability: Capability,
-): CapabilityEffect {
+export function effectOf(capability: Capability): CapabilityEffect {
 	return capability.effect ?? "allow";
 }
