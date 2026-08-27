@@ -1,9 +1,17 @@
 /**
- * Capability / catalog types for delegate-permissions AuthZ.
- * @see docs/adr/0001-delegate-permissions.md
+ * Capability / catalog types for Delegate Permissions AuthZ.
+ * @see docs/adr/0001-delegate-permissions.md (better-auth)
  */
 
-export type ScopeAlgebra = "exact" | "dns_prefix" | "set";
+export type ScopeAlgebra =
+	| "exact"
+	| "dns_prefix"
+	| "path_prefix"
+	| "set"
+	| "semver";
+
+/** Allow (default) or explicit deny. Omitted `effect` means `"allow"`. */
+export type CapabilityEffect = "allow" | "deny";
 
 /** Scope map: omitted dimension = unrestricted (ALL). */
 export type ScopeMap = {
@@ -14,6 +22,8 @@ export type Capability = {
 	readonly action: string;
 	readonly scope: ScopeMap;
 	readonly delegable: boolean;
+	/** Defaults to `"allow"` when omitted (wire v1 compat). */
+	readonly effect?: CapabilityEffect;
 };
 
 export type CapabilitySet = readonly Capability[];
@@ -51,3 +61,10 @@ export type ProfileDef = {
 	readonly profile: string;
 	readonly permissions: CapabilitySet;
 };
+
+/** Resolve capability effect with v1 default. */
+export function effectOf(
+	capability: Capability,
+): CapabilityEffect {
+	return capability.effect ?? "allow";
+}

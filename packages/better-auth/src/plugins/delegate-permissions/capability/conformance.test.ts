@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { actionCovers } from "./action";
 import { authorize } from "./authorize";
-import { dnsPrefixSubset } from "./scope";
+import { dnsPrefixSubset, pathPrefixSubset } from "./scope";
+import { semverRangeSubset, semverSatisfies } from "./semver";
 import { assertSubset } from "./subset";
 import type { CapabilitySet, Catalog, Resource } from "./types";
 
@@ -19,6 +20,9 @@ const fixtures = JSON.parse(
 	catalog: Catalog;
 	actionCovers: { granted: string; requested: string; ok: boolean }[];
 	dnsPrefixSubset: { child: string; parent: string; ok: boolean }[];
+	pathPrefixSubset: { child: string; parent: string; ok: boolean }[];
+	semverSatisfies: { version: string; range: string; ok: boolean }[];
+	semverRangeSubset: { child: string; parent: string; ok: boolean }[];
 	authorize: {
 		name: string;
 		grants: CapabilitySet;
@@ -46,6 +50,24 @@ describe("shared conformance fixtures", () => {
 	for (const row of fixtures.dnsPrefixSubset) {
 		it(`dnsPrefixSubset ${row.child} ⊆ ${row.parent}`, () => {
 			expect(dnsPrefixSubset(row.child, row.parent)).toBe(row.ok);
+		});
+	}
+
+	for (const row of fixtures.pathPrefixSubset ?? []) {
+		it(`pathPrefixSubset ${row.child} ⊆ ${row.parent}`, () => {
+			expect(pathPrefixSubset(row.child, row.parent)).toBe(row.ok);
+		});
+	}
+
+	for (const row of fixtures.semverSatisfies ?? []) {
+		it(`semverSatisfies ${row.version} ∈ ${row.range}`, () => {
+			expect(semverSatisfies(row.version, row.range)).toBe(row.ok);
+		});
+	}
+
+	for (const row of fixtures.semverRangeSubset ?? []) {
+		it(`semverRangeSubset ${row.child} ⊆ ${row.parent}`, () => {
+			expect(semverRangeSubset(row.child, row.parent)).toBe(row.ok);
 		});
 	}
 

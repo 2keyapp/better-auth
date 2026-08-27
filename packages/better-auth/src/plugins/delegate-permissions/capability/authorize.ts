@@ -7,6 +7,7 @@ import type {
 	Resource,
 	ScopeAlgebra,
 } from "./types";
+import { effectOf } from "./types";
 
 function algebraLookup(
 	catalog: Catalog,
@@ -19,6 +20,10 @@ function algebraLookup(
 
 /**
  * Authorize `action` on `resource` against a principal CapabilitySet.
+ * Same function for client PEP and server PEP — do not fork logic.
+ *
+ * Precedence: matching explicit deny → EXPLICIT_DENY; else matching allow → ok;
+ * else NOT_AUTHORIZED.
  */
 export function authorize(
 	grants: CapabilitySet,
@@ -46,7 +51,28 @@ export function authorize(
 
 	const algebraFor = algebraLookup(catalog);
 
+	// Pass 1: explicit denies win.
 	for (const grant of grants) {
+		if (effectOf(grant) !== "deny") {
+			continue;
+		}
+		if (!actionCovers(grant.action, action)) {
+			continue;
+		}
+		if (resourceSatisfiesScope(resource, grant.scope, algebraFor)) {
+			return {
+				ok: false,
+				code: "EXPLICIT_DENY",
+				message: `explicitly denied for action "${action}"`,
+			};
+		}
+	}
+
+	// Pass 2: allows.
+	for (const grant of grants) {
+		if (effectOf(grant) !== "allow") {
+			continue;
+		}
 		if (!actionCovers(grant.action, action)) {
 			continue;
 		}

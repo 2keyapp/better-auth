@@ -1,3 +1,9 @@
+import {
+	isExactVersion,
+	semverRangeSubset,
+	semverRangesOverlap,
+	semverSatisfies,
+} from "./semver";
 import type { ScopeAlgebra, ScopeMap } from "./types";
 
 /**
@@ -14,12 +20,28 @@ export function dnsPrefixSubset(child: string, parent: string): boolean {
 	return child.endsWith(`.${parent}`);
 }
 
+/**
+ * Whether `child` is a path-prefix subset of `parent` for rightward path trees.
+ * Parent `""` covers all. Match is segment-bounded (`parent + "/"`), not raw startsWith.
+ */
+export function pathPrefixSubset(child: string, parent: string): boolean {
+	if (parent === "") {
+		return true;
+	}
+	if (child === parent) {
+		return true;
+	}
+	return child.startsWith(`${parent}/`);
+}
+
 function asStringList(value: string | readonly string[]): readonly string[] {
 	return typeof value === "string" ? [value] : value;
 }
 
 /**
  * Whether child scope value is ⊆ parent scope value under the given algebra.
+ *
+ * For `semver`: exact version ⊆ range uses satisfies; range ⊆ range uses range subset.
  */
 export function scopeValueSubset(
 	child: string | readonly string[],
@@ -43,10 +65,88 @@ export function scopeValueSubset(
 			}
 			return dnsPrefixSubset(c[0]!, p[0]!);
 		}
+		case "path_prefix": {
+			const c = asStringList(child);
+			const p = asStringList(parent);
+			if (c.length !== 1 || p.length !== 1) {
+				return false;
+			}
+			return pathPrefixSubset(c[0]!, p[0]!);
+		}
 		case "set": {
 			const c = asStringList(child);
 			const p = new Set(asStringList(parent));
 			return c.every((member) => p.has(member));
+		}
+		case "semver": {
+			const children = asStringList(child);
+			const parents = asStringList(parent);
+			if (children.length === 0 || parents.length === 0) {
+				return false;
+			}
+			// Exact version against range(s) — authorize path.
+			if (children.length === 1 && isExactVersion(children[0]!)) {
+				return parents.some((range) =>
+					semverSatisfies(children[0]!, range),
+				);
+			}
+			// Range ⊆ range — attenuation path.
+			return children.every((cr) =>
+				parents.some((pr) => semverRangeSubset(cr, pr)),
+			);
+		}
+		default: {
+			const _exhaustive: never = algebra;
+			return _exhaustive;
+		}
+	}
+}
+
+/**
+ * Whether two scope values overlap (share any matching resource) under algebra.
+ * Used for deny-override detection during assertSubset.
+ */
+export function scopeValuesOverlap(
+	a: string | readonly string[],
+	b: string | readonly string[],
+	algebra: ScopeAlgebra,
+): boolean {
+	switch (algebra) {
+		case "exact": {
+			const aa = asStringList(a);
+			const bb = asStringList(b);
+			return aa.length === 1 && bb.length === 1 && aa[0] === bb[0];
+		}
+		case "dns_prefix": {
+			const aa = asStringList(a);
+			const bb = asStringList(b);
+			if (aa.length !== 1 || bb.length !== 1) {
+				return false;
+			}
+			return (
+				dnsPrefixSubset(aa[0]!, bb[0]!) ||
+				dnsPrefixSubset(bb[0]!, aa[0]!)
+			);
+		}
+		case "path_prefix": {
+			const aa = asStringList(a);
+			const bb = asStringList(b);
+			if (aa.length !== 1 || bb.length !== 1) {
+				return false;
+			}
+			return (
+				pathPrefixSubset(aa[0]!, bb[0]!) ||
+				pathPrefixSubset(bb[0]!, aa[0]!)
+			);
+		}
+		case "set": {
+			const setB = new Set(asStringList(b));
+			return asStringList(a).some((m) => setB.has(m));
+		}
+		case "semver": {
+			const aa = asStringList(a);
+			const bb = asStringList(b);
+			return aa.some((x) => bb.some((y) => semverRangesOverlap(x, y)));
 		}
 		default: {
 			const _exhaustive: never = algebra;
@@ -57,8 +157,6 @@ export function scopeValueSubset(
 
 /**
  * Whether child ScopeMap is ⊆ parent ScopeMap.
- * Dimensions present only on the child require the parent to be unrestricted
- * (dimension omitted on parent) or to cover via algebra.
  */
 export function scopeMapSubset(
 	child: ScopeMap,
@@ -71,12 +169,10 @@ export function scopeMapSubset(
 		const parentValue = parent[dimension];
 		const childValue = child[dimension];
 
-		// Parent unrestricted on this dimension — child may narrow or omit.
 		if (parentValue === undefined) {
 			continue;
 		}
 
-		// Parent restricts a dimension the child omits → child is broader → reject.
 		if (childValue === undefined) {
 			return {
 				ok: false,
@@ -104,6 +200,31 @@ export function scopeMapSubset(
 	}
 
 	return { ok: true };
+}
+
+/**
+ * Whether allowScope overlaps denyScope (child allow would authorize something
+ * the deny covers). Omitted dimensions on the allow mean ALL → overlap on that dim.
+ */
+export function scopesOverlapDeny(
+	allowScope: ScopeMap,
+	denyScope: ScopeMap,
+	algebraFor: (dimension: string) => ScopeAlgebra | undefined,
+): boolean {
+	for (const [dimension, denyValue] of Object.entries(denyScope)) {
+		const allowValue = allowScope[dimension];
+		if (allowValue === undefined) {
+			continue;
+		}
+		const algebra = algebraFor(dimension);
+		if (!algebra) {
+			return false;
+		}
+		if (!scopeValuesOverlap(allowValue, denyValue, algebra)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**

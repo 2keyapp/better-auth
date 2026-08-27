@@ -28,24 +28,29 @@ Apps share one Auth+Billing codebase and Better Auth for AuthN, but each deploym
 ### Capability model
 
 ```text
-Capability = { action, scope, delegable }
+Capability = { action, scope, delegable, effect? }
 CapabilitySet = Capability[]
 Scope = map of dimension → value (string | string[])
+effect ∈ { allow, deny }  // omitted ⇒ allow (v1 compat)
 ```
 
 * Root / profile expansion yields the entity permission universe for that app package.
-* **Attenuation:** every child grant must satisfy `child ⊆ parent` (action coverage + scope subset + `delegable` rules).
+* **Attenuation:** every child grant must satisfy `child ⊆ parent` (action coverage + scope subset + `delegable` rules). Parent denies are mandatory; child allows must not overlap them.
 * A holder may set `delegable: false` even when the parent had `delegable: true`.
 
-### Scope algebras (v1)
+### Scope algebras (v2)
 
-| Algebra      | Subset rule                                                              |
-| ------------ | ------------------------------------------------------------------------ |
-| `exact`      | child value === parent value                                             |
-| `dns_prefix` | child === parent OR child ends with `.` + parent; parent `""` covers all |
-| `set`        | every child member ∈ parent set                                          |
+| Algebra       | Subset rule                                                                 |
+| ------------- | --------------------------------------------------------------------------- |
+| `exact`       | child value === parent value                                                |
+| `dns_prefix`  | child === parent OR child ends with `.` + parent; parent `""` covers all    |
+| `path_prefix` | child === parent OR child starts with parent + `/`; parent `""` covers all  |
+| `set`         | every child member ∈ parent set                                             |
+| `semver`      | exact version satisfies range; or child range ⊆ parent range (v1 grammar)   |
 
 Missing dimension on a grant means **unrestricted** for that dimension (parent ALL). Child may narrow.
+
+See also [ADR-0002](./0002-dp-algebra-v2.md) for deny precedence and semver grammar.
 
 ### Action coverage (v1)
 
@@ -71,18 +76,20 @@ Missing dimension on a grant means **unrestricted** for that dimension (parent A
 
 ## Error codes (stable)
 
-| Code                      | Meaning                             |
-| ------------------------- | ----------------------------------- |
-| `CATALOG_NOT_SEEDED`      | No catalog rows for service         |
-| `UNKNOWN_ACTION`          | Action not in catalog               |
-| `UNKNOWN_SCOPE_DIMENSION` | Dimension not in catalog            |
-| `SUBSET_VIOLATION`        | Child grants not ⊆ parent           |
-| `NOT_AUTHORIZED`          | authorize() denied                  |
-| `NO_PRINCIPAL_GRANT`      | User has no principal CapabilitySet |
-| `NO_SESSION_GRANT`        | Session has no issued capabilities  |
-| `GRANT_EXPIRED`           | Grant past expiresAt                |
-| `INVALID_CAPABILITY_SET`  | Malformed permissions payload       |
-| `SEED_DISABLED`           | Seeding not configured/allowed      |
+| Code                       | Meaning                                      |
+| -------------------------- | -------------------------------------------- |
+| `CATALOG_NOT_SEEDED`       | No catalog rows for service                  |
+| `UNKNOWN_ACTION`           | Action not in catalog                        |
+| `UNKNOWN_SCOPE_DIMENSION`  | Dimension not in catalog                     |
+| `SUBSET_VIOLATION`         | Child grants not ⊆ parent                    |
+| `DENY_OVERRIDE_VIOLATION`  | Child allow overlaps a parent deny           |
+| `NOT_AUTHORIZED`           | authorize() denied (default deny)            |
+| `EXPLICIT_DENY`            | authorize() matched an explicit deny grant   |
+| `NO_PRINCIPAL_GRANT`       | User has no principal CapabilitySet          |
+| `NO_SESSION_GRANT`         | Session has no issued capabilities           |
+| `GRANT_EXPIRED`            | Grant past expiresAt                         |
+| `INVALID_CAPABILITY_SET`   | Malformed permissions payload                |
+| `SEED_DISABLED`            | Seeding not configured/allowed               |
 
 ## Consequences
 

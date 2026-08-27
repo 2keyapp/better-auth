@@ -1,5 +1,5 @@
 import { actionCovers } from "./action";
-import { scopeMapSubset } from "./scope";
+import { scopeMapSubset, scopesOverlapDeny } from "./scope";
 import type {
 	Capability,
 	CapabilitySet,
@@ -7,6 +7,7 @@ import type {
 	ScopeAlgebra,
 	SubsetResult,
 } from "./types";
+import { effectOf } from "./types";
 
 function algebraLookup(
 	catalog: Catalog,
@@ -21,7 +22,6 @@ function actionKnown(catalog: Catalog, action: string): boolean {
 	if (catalog.actions.some((a) => a.action === action)) {
 		return true;
 	}
-	// Allow wildcard grants that cover catalog actions (e.g. cert.*)
 	if (action.endsWith(".*")) {
 		const prefix = action.slice(0, -2);
 		return catalog.actions.some(
@@ -31,7 +31,66 @@ function actionKnown(catalog: Catalog, action: string): boolean {
 	return false;
 }
 
-function capabilityCoveredByParent(
+function parentDenyBlocksAllow(
+	childAllow: Capability,
+	parentSet: CapabilitySet,
+	catalog: Catalog,
+): boolean {
+	const algebraFor = algebraLookup(catalog);
+	for (const parent of parentSet) {
+		if (effectOf(parent) !== "deny") {
+			continue;
+		}
+		if (!actionCovers(parent.action, childAllow.action)) {
+			continue;
+		}
+		if (scopesOverlapDeny(childAllow.scope, parent.scope, algebraFor)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function allowCoveredByParent(
+	child: Capability,
+	parentSet: CapabilitySet,
+	catalog: Catalog,
+): SubsetResult {
+	const algebraFor = algebraLookup(catalog);
+
+	if (parentDenyBlocksAllow(child, parentSet, catalog)) {
+		return {
+			ok: false,
+			code: "DENY_OVERRIDE_VIOLATION",
+			message: `capability action "${child.action}" allow overlaps a parent deny`,
+		};
+	}
+
+	for (const parent of parentSet) {
+		if (effectOf(parent) !== "allow") {
+			continue;
+		}
+		if (!parent.delegable) {
+			continue;
+		}
+		if (!actionCovers(parent.action, child.action)) {
+			continue;
+		}
+		const scopeResult = scopeMapSubset(child.scope, parent.scope, algebraFor);
+		if (!scopeResult.ok) {
+			continue;
+		}
+		return { ok: true };
+	}
+
+	return {
+		ok: false,
+		code: "SUBSET_VIOLATION",
+		message: `capability action "${child.action}" is not covered by a delegable parent grant`,
+	};
+}
+
+function denyCoveredByParent(
 	child: Capability,
 	parentSet: CapabilitySet,
 	catalog: Catalog,
@@ -49,19 +108,33 @@ function capabilityCoveredByParent(
 		if (!scopeResult.ok) {
 			continue;
 		}
-		// Child may further set delegable=false; cannot require parent non-delegable upgrade.
-		return { ok: true };
+		// May refine an existing deny or add a deny inside a held allow.
+		if (effectOf(parent) === "deny" || effectOf(parent) === "allow") {
+			return { ok: true };
+		}
 	}
 
 	return {
 		ok: false,
 		code: "SUBSET_VIOLATION",
-		message: `capability action "${child.action}" is not covered by a delegable parent grant`,
+		message: `deny capability action "${child.action}" is not covered by a delegable parent allow or deny`,
 	};
+}
+
+function capabilityCoveredByParent(
+	child: Capability,
+	parentSet: CapabilitySet,
+	catalog: Catalog,
+): SubsetResult {
+	if (effectOf(child) === "deny") {
+		return denyCoveredByParent(child, parentSet, catalog);
+	}
+	return allowCoveredByParent(child, parentSet, catalog);
 }
 
 /**
  * Assert every child capability is ⊆ some delegable parent capability.
+ * Parent denies are mandatory: child allows must not overlap them.
  */
 export function assertSubset(
 	child: CapabilitySet,
