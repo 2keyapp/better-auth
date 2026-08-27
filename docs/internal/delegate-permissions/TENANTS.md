@@ -11,10 +11,10 @@ Canonical registry: [`2keyapp/2key-browser-sdk` docs/TENANTS.md](https://github.
 | `idr`        | IDR        | `@2key/catalog-idr`        | Populated — Presence PEP; see catalog README                     |
 | `os20`       | OS20       | `@2key/catalog-os20`       | Populated — API/registry PEP + Workbench advisory; DP algebra v2 |
 | `stemsketch` | StemSketch | `@2key/catalog-stemsketch` | Auth + Billing model **TBD**                                     |
-| `mnms`       | MnMs       | `@2key/catalog-mnms`       | Auth + Billing model **TBD**                                     |
+| `mnms`       | MnMs       | `@2key/catalog-mnms`       | Populated — App-owner → Admin DevOps; multi-owner grant union    |
 
 ```ts
-import { CATALOG_SEED, SERVICE_ID } from "@2key/catalog-os20";
+import { CATALOG_SEED, SERVICE_ID } from "@2key/catalog-mnms";
 
 // Production: Platform CA is required (HAProxy ca-file).
 delegatePermissions({
