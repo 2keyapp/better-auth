@@ -1,7 +1,14 @@
 import type { BetterAuthPlugin } from "@better-auth/core";
 import { createAuthMiddleware } from "@better-auth/core/api";
+import { attachSessionCookieToCallback } from "./callback-nonce";
 import { flutterAuthorizationProxy } from "./routes";
 import { PACKAGE_VERSION } from "./version";
+
+export {
+	attachSessionCookieToCallback,
+	CALLBACK_NONCE_PARAM,
+	nativeRedirectHasCallbackNonce,
+} from "./callback-nonce";
 
 export interface AuthNativeOptions {
 	/**
@@ -29,7 +36,8 @@ declare module "@better-auth/core" {
  * Adds trusted-origin helpers for custom URL schemes, copies
  * `flutter-origin` into the request origin header (so CSRF/origin
  * checks work without a browser Origin), and attaches session cookies
- * to deep-link redirects after OAuth / magic-link / email verification.
+ * to deep-link redirects after OAuth / magic-link / email verification
+ * only when the registered `callbackURL` echoes a `ba_nonce`.
  *
  * Wire plugin id remains `"flutter"` for backward compatibility with
  * existing clients and `flutter-origin` headers.
@@ -115,8 +123,11 @@ export const authNative = (options?: AuthNativeOptions | undefined) => {
 						if (!cookie) {
 							return;
 						}
-						redirectURL.searchParams.set("cookie", cookie);
-						ctx.setHeader("location", redirectURL.toString());
+						const next = attachSessionCookieToCallback(location, cookie);
+						if (!next) {
+							return;
+						}
+						ctx.setHeader("location", next);
 					}),
 				},
 			],

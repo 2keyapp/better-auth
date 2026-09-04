@@ -180,9 +180,10 @@ final class AuthClient implements AuthRequestClient {
 			);
 		}
 
-		final resolvedCallback =
-				flutterPlugin.resolveCallbackUrl(callbackURL).toString();
-		body['callbackURL'] = resolvedCallback;
+		final resolvedCallback = withCallbackNonce(
+			flutterPlugin.resolveCallbackUrl(callbackURL),
+		);
+		body['callbackURL'] = resolvedCallback.toString();
 
 		final result = await postJson('/sign-in/social', body);
 		if (result.error != null) return result;
@@ -199,7 +200,7 @@ final class AuthClient implements AuthRequestClient {
 			final captured = await flutterPlugin.completeSocialRedirect(
 				signInUrl: url,
 				authBaseUrl: _authBase.toString(),
-				callbackURL: resolvedCallback,
+				callbackURL: resolvedCallback.toString(),
 			);
 			if (captured) {
 				await getSession();

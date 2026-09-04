@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import '../cookies.dart';
 import '../storage.dart';
+import 'callback_nonce.dart';
+
+export 'callback_nonce.dart';
 
 /// Opens an auth session in a browser / ASWebAuthenticationSession-style UI
 /// and returns the final redirect URL on success.
@@ -169,6 +172,10 @@ final class FlutterClientPlugin {
 			callbackUrl: callbackUrl,
 		);
 		if (resultUrl == null) return false;
+
+		if (!callbackNonceMatches(expected: callbackUrl, actual: resultUrl)) {
+			return false;
+		}
 
 		final cookieParam = resultUrl.queryParameters['cookie'];
 		if (cookieParam == null || cookieParam.isEmpty) return false;

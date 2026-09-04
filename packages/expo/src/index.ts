@@ -98,6 +98,11 @@ export const expo = (options?: ExpoOptions | undefined) => {
 						if (!cookie) {
 							return;
 						}
+						// Same CSRF bind as @2key/auth-native: no cookie without ba_nonce.
+						const nonce = redirectURL.searchParams.get("ba_nonce")?.trim();
+						if (!nonce) {
+							return;
+						}
 						redirectURL.searchParams.set("cookie", cookie);
 						ctx.setHeader("location", redirectURL.toString());
 					}),

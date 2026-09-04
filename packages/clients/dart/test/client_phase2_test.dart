@@ -26,6 +26,18 @@ void main() {
 		});
 	});
 
+	group('callback nonce', () {
+		test('withCallbackNonce is stable when already set', () {
+			final first = withCallbackNonce(Uri.parse('myapp://auth/callback'));
+			final again = withCallbackNonce(first);
+			expect(first.queryParameters[kCallbackNonceParam], isNotEmpty);
+			expect(
+				again.queryParameters[kCallbackNonceParam],
+				first.queryParameters[kCallbackNonceParam],
+			);
+		});
+	});
+
 	group('flutterClient social helpers', () {
 		test('resolveCallbackUrl builds deep links', () {
 			final plugin = flutterClient(
@@ -46,6 +58,10 @@ void main() {
 
 		test('completeSocialRedirect stores cookie from callback', () async {
 			final memory = MemoryAuthStorage();
+			final callback = withCallbackNonce(
+				Uri.parse('myapp:///dashboard'),
+				nonce: 'test-nonce',
+			);
 			final plugin = flutterClient(
 				FlutterClientOptions(
 					scheme: 'myapp',
@@ -62,6 +78,35 @@ void main() {
 							authorizationUrl.queryParameters['authorizationURL'],
 							'https://accounts.google.com/o/oauth2',
 						);
+						expect(callbackUrl.queryParameters[kCallbackNonceParam], 'test-nonce');
+						return callbackUrl.replace(
+							queryParameters: {
+								...callbackUrl.queryParameters,
+								'cookie': 'better-auth.session_token=tok; Max-Age=3600',
+							},
+						);
+					},
+				),
+			);
+
+			final ok = await plugin.completeSocialRedirect(
+				signInUrl: 'https://accounts.google.com/o/oauth2',
+				authBaseUrl: 'http://localhost/api/auth',
+				callbackURL: callback.toString(),
+			);
+			expect(ok, isTrue);
+			expect(await plugin.getCookie(), contains('session_token=tok'));
+		});
+
+		test('completeSocialRedirect ignores cookie without echoed nonce', () async {
+			final plugin = flutterClient(
+				FlutterClientOptions(
+					scheme: 'myapp',
+					storage: MemoryAuthStorage(),
+					sessionLauncher: ({
+						required authorizationUrl,
+						required callbackUrl,
+					}) async {
 						return Uri.parse(
 							'myapp:///dashboard?cookie=${Uri.encodeComponent('better-auth.session_token=tok; Max-Age=3600')}',
 						);
@@ -72,10 +117,13 @@ void main() {
 			final ok = await plugin.completeSocialRedirect(
 				signInUrl: 'https://accounts.google.com/o/oauth2',
 				authBaseUrl: 'http://localhost/api/auth',
-				callbackURL: '/dashboard',
+				callbackURL: withCallbackNonce(
+					Uri.parse('myapp:///dashboard'),
+					nonce: 'expected',
+				).toString(),
 			);
-			expect(ok, isTrue);
-			expect(await plugin.getCookie(), contains('session_token=tok'));
+			expect(ok, isFalse);
+			expect(await plugin.getCookie(), isEmpty);
 		});
 
 		test('getOAuthStateValue reads stored oauth_state', () {
@@ -212,8 +260,16 @@ void main() {
 								authorizationUrl.queryParameters['oauthState'],
 								'abc',
 							);
-							return Uri.parse(
-								'myapp:///dashboard?cookie=better-auth.session_token%3Dxyz%3B%20Max-Age%3D3600',
+							expect(
+								callbackUrl.queryParameters.containsKey(kCallbackNonceParam),
+								isTrue,
+							);
+							return callbackUrl.replace(
+								queryParameters: {
+									...callbackUrl.queryParameters,
+									'cookie':
+											'better-auth.session_token=xyz; Max-Age=3600',
+								},
 							);
 						},
 					),
